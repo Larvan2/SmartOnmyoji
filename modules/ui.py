@@ -258,7 +258,7 @@ class Ui_MainWindow(object):
         self.loop_min = QtWidgets.QDoubleSpinBox(self.layoutWidget10)
         self.loop_min.setMinimumSize(QtCore.QSize(80, 0))
         self.loop_min.setMinimum(1.0)
-        self.loop_min.setMaximum(300.0)
+        self.loop_min.setMaximum(999.0)
         self.loop_min.setSingleStep(1.0)
         self.loop_min.setProperty("value", 90.0)
         self.loop_min.setObjectName("loop_min")
