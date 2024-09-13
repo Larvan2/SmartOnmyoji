@@ -187,7 +187,7 @@ class HandleSet:
             return False, '<br>连接出现异常，或设备无响应'
 
     @staticmethod
-    def get_active_window(loop_times=5):
+    def get_active_window(loop_times=3):
         """
         点击鼠标获取目标窗口句柄
         :param loop_times: 倒计时/循环次数
@@ -211,12 +211,15 @@ class HandleSet:
     @staticmethod
     def play_sounds(flag):
         """播放声音"""
-        if flag == "warming":
-            sound = abspath(dirname(__file__)) + r'\sounds\\warming.wav'
-            winsound.PlaySound(sound, winsound.SND_ALIAS)
-        elif flag == "end":
-            sound = abspath(dirname(__file__)) + r'\sounds\\end.wav'
-            winsound.PlaySound(sound, winsound.SND_ALIAS)
-        elif flag == "ding":
-            sound = abspath(dirname(__file__)) + r'\sounds\\ding.wav'
-            winsound.PlaySound(sound, winsound.SND_ALIAS)
+        try:
+            if flag == "warming":
+                sound = abspath(dirname(__file__)) + r'\sounds\warming.wav'
+                winsound.PlaySound(sound, winsound.SND_ALIAS)
+            elif flag == "end":
+                sound = abspath(dirname(__file__)) + r'\sounds\end.wav'
+                winsound.PlaySound(sound, winsound.SND_ALIAS)
+            elif flag == "ding":
+                sound = abspath(dirname(__file__)) + r'\sounds\ding.wav'
+                winsound.PlaySound(sound, winsound.SND_ALIAS)
+        except Exception as e:
+            print(f"播放声音失败: {e}")

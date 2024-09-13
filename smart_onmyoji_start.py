@@ -44,7 +44,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.run_mode_value = ui_info[8]
         self.custom_target_path_value = ui_info[9]
         self.process_num_value = ui_info[10]
-        self.handle_num_value = ui_info[11]
+        self.handle_num_value = ""
         self.if_end_value = ui_info[12]
         self.debug_status_value = ui_info[13]
         self.set_priority_status_value = ui_info[14]

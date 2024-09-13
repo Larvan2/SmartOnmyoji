@@ -1,45 +1,18 @@
 [
     {
-        "name":"reward",
-        "real_pos":[840,330],
-        "click_pos":[[900,620],[850,600],[800,580],[750,560],[700,540]],
+        "name":"win",
+        "real_pos":[950,300],
+        "click_pos":[[950,300],[950,300]],
         "flag": ""
     },
     {
-        "name":"reward2",
-        "real_pos":[76,90],
-        "click_pos":[[900,620],[850,600],[800,580],[750,560],[700,540]],
-        "flag": ""
-    },
-    {
-        "name":"win_jiangli",
-        "real_pos":[660,560],
-        "click_pos":[[900,620],[850,600],[800,580],[750,560],[700,540]],
-        "flag": ""
-    },
-    {
-        "name":"win_jiangli2",
-        "real_pos":[570,530],
-        "click_pos":[[900,620],[850,600],[800,580],[750,560],[700,540]],
-        "flag": ""
-    },
-    {
-        "name":"win_shengli",
-        "real_pos":[530,200],
-        "click_pos":[[820,480],[800,260]],
-        "flag": ""
-    },
-    {
-        "name":"fail_shibai",
-        "real_pos":[508,216],
-        "click_pos":[[820,480],[800,260]],
-        "flag": ""
-    },
-    {
-        "name":"xuzuo_mark",
-        "real_pos": [],
-        "click_pos":[],
-        "flag": ""
+      "name": "end",
+      "real_pos": [950, 300],
+      "click_pos": [
+        [950, 480],
+        [950, 260]
+      ],
+      "flag": ""
     },
     {
         "name":"00_marked",
@@ -48,7 +21,7 @@
         "flag": "skip"
     },
     {
-        "name":"tiaozhan_lingran",
+        "name":"start",
         "real_pos": [],
         "click_pos":[],
         "flag": "start"
