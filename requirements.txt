@@ -3,3 +3,4 @@ opencv-python==4.10.0.84
 PyQt5==5.15.11
 PyAutoGUI==0.9.54
 pillow==10.4.0
+PyInstaller==6.10.0
