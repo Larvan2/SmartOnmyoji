@@ -207,20 +207,7 @@
           <select id="mgWindowSelect"></select>
           <button id="mgCapture" class="ghost">截图</button>
         </div>
-        <div id="captureStage" class="capture-stage empty">
-          <img id="captureImg" alt="" />
-          <div id="selRect" class="sel-rect hidden"></div>
-          <div id="pointLayer" class="point-layer"></div>
-          <div class="capture-placeholder">选窗口后点「截图」</div>
-        </div>
-        <div class="capture-tools">
-          <button id="modeCrop" class="chip active">框选模板</button>
-          <span id="selInfo" class="meta"></span>
-        </div>
-        <div class="row">
-          <input id="newImgName" placeholder="模板文件名(如 tiaozhan)" />
-          <button id="saveCrop" class="primary" disabled>保存选区为模板</button>
-        </div>
+        <p class="hint">截图后会打开大尺寸编辑器,在其中框选生成模板;也可在右侧图片行点「偏移点」进入点选模式。</p>
       </div>
     </section>
 
@@ -244,6 +231,34 @@
       </div>
     </section>
   </main>
+
+  <!-- 截图取模板/点选偏移点:大尺寸编辑器(窄卡片里放不下精细框选/点选,弹窗放大操作) -->
+  <div id="captureModal" class="capture-modal hidden">
+    <div class="capture-dialog">
+      <div class="capture-modal-head">
+        <h2 id="captureModalTitle">框选模板</h2>
+        <div class="capture-modal-tools">
+          <button id="modeCrop" class="chip active">框选模板</button>
+          <span id="selInfo" class="meta"></span>
+          <button id="captureModalClose" class="ghost">✕ 关闭</button>
+        </div>
+      </div>
+      <div class="capture-modal-body">
+        <div id="captureStage" class="capture-stage empty">
+          <div class="capture-canvas">
+            <img id="captureImg" alt="" />
+            <div id="selRect" class="sel-rect hidden"></div>
+            <div id="pointLayer" class="point-layer"></div>
+          </div>
+          <div class="capture-placeholder">选窗口后点「截图」</div>
+        </div>
+      </div>
+      <div class="capture-modal-foot row">
+        <input id="newImgName" placeholder="模板文件名(如 tiaozhan)" />
+        <button id="saveCrop" class="primary" disabled>保存选区为模板</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 点击位置分析:本次运行的点击落点统计(数据来自事件流,不落文件,关闭即随运行清空) -->
   <div id="analyzeModal" class="analyze-modal hidden">

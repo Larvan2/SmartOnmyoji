@@ -639,7 +639,13 @@ function bindManage() {
   window.addEventListener('mousemove', onStageMove);
   window.addEventListener('mouseup', onStageUp);
   stage.addEventListener('click', onStageClick);
+
+  $('captureModalClose').addEventListener('click', closeCaptureModal);
+  $('captureModal').addEventListener('click', (e) => { if (e.target === $('captureModal')) closeCaptureModal(); });
 }
+
+function openCaptureModal() { $('captureModal').classList.remove('hidden'); }
+function closeCaptureModal() { $('captureModal').classList.add('hidden'); }
 
 async function mgLoadSets() {
   const sets = await api('/api/targets');
@@ -730,6 +736,7 @@ async function mgCapture() {
   };
   img.src = mg.capUrl;
   clearSelection();
+  openCaptureModal();
 }
 
 // ---- 框选模板 ----
@@ -812,9 +819,15 @@ function enterPointMode(idx) {
   mg.mode = 'point';
   mg.pointRow = idx;
   $('modeCrop').classList.remove('active');
+  $('captureModalTitle').textContent = `点选偏移点 · ${mg.model.images[idx].file}`;
   clearSelection();
   renderPoints();
   renderMgImages();
+  if (!mg.natW) {
+    toast('请先在左侧「截图取模板」选窗口并点「截图」,再点「偏移点」进入点选', 'info');
+    return;
+  }
+  openCaptureModal();
   toast('点选模式:在截图上单击添加偏移点击点', 'info');
 }
 
@@ -822,6 +835,7 @@ function setCropMode() {
   mg.mode = 'crop';
   mg.pointRow = -1;
   $('modeCrop').classList.add('active');
+  $('captureModalTitle').textContent = '框选模板';
   renderPoints();
   if (mg.model) renderMgImages();
 }

@@ -222,18 +222,27 @@
   .manage-right { min-height: 0; }
   .card code { background: color-mix(in srgb, var(--muted) 16%, transparent); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
-  .capture-stage { position: relative; margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #0004; min-height: 80px; user-select: none; }
-  .capture-stage.empty { display: grid; place-items: center; min-height: 140px; }
-  .capture-stage.empty #captureImg { display: none; }
+  .capture-stage { position: relative; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #0004; min-height: 80px; user-select: none; }
+  .capture-stage.empty { min-height: 50vh; }
+  .capture-stage.empty .capture-canvas { display: none; }
   .capture-stage:not(.empty) .capture-placeholder { display: none; }
   .capture-placeholder { color: var(--muted); font-size: 13px; }
-  #captureImg { display: block; width: 100%; height: auto; cursor: crosshair; }
+  .capture-canvas { position: relative; line-height: 0; }
+  #captureImg { display: block; width: auto; height: auto; max-width: 100%; max-height: 76vh; cursor: crosshair; }
   .sel-rect { position: absolute; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); pointer-events: none; }
   .point-layer { position: absolute; inset: 0; pointer-events: none; }
   .pt { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--error); border: 2px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,.5); }
-  .capture-tools { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
   .chip { padding: 4px 12px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); cursor: pointer; }
   .chip.active { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); border-color: transparent; }
+
+  /* 截图编辑器弹窗(框选模板 / 点选偏移点,放大操作) */
+  .capture-modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(0,0,0,.45); padding: 20px; }
+  .capture-dialog { width: min(1400px, 94vw); max-height: 92vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+  .capture-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .capture-modal-head h2 { margin: 0; font-size: 15px; }
+  .capture-modal-tools { display: flex; align-items: center; gap: 10px; }
+  .capture-modal-body { padding: 16px 18px; }
+  .capture-modal-foot { padding: 0 18px 18px; }
 
   .mg-images { flex: 1; overflow-y: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
   .mg-row { display: grid; grid-template-columns: 18px 56px 1fr 96px 56px 92px 56px 44px; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
