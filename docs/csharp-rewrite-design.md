@@ -525,6 +525,7 @@ Host (Kestrel, localhost)
   - **问题**:左侧「截图取模板」卡片把截图画布嵌在 400px 窄栏里(`#captureImg` 实际只能撑到约 360px 宽),1200×600 的游戏截图被缩得很小,框选模板 / 点选偏移点都难以精确操作(用户反馈)。
   - **改法**:复用运行页「点击位置分析」同款遮罩弹窗模式,新增 `#captureModal`(`min(1400px, 94vw)`)。左侧卡片只留窗口筛选/选择/截图按钮;点「截图」成功、或在右侧图片行点「偏移点」时打开弹窗。原截图区的全部 DOM(`captureStage`/`captureImg`/`selRect`/`pointLayer`)与保存控制原样搬进弹窗,框选拖拽/归一化点选的坐标换算逻辑不变(仍按 `imgRect()` 相对定位),只是 `captureImg` 从撑满容器改成 `max-width/max-height` 居中 letterbox 显示;新增 `.capture-canvas` 包裹层,确保 letterbox 留白下 `selRect`/`pointLayer` 的绝对定位仍与图片精确对齐(而非相对外层弹窗偏移)。若在右侧点「偏移点」但本次会话还没截图,不再打开空弹窗死路,改为 toast 提示先去左侧截图。
   - **实测**:临时 Playwright 脚本跑 `serve` headless,连上本机真实运行的阴阳师窗口截图成功,弹窗按预期打开、拖拽框选的选区与鼠标轨迹像素级对齐(误差 <1px)、关闭按钮正常隐藏、全程无 JS 控制台报错。
+  - **弹窗内加「重新截图」**(用户反馈):原先弹窗打开后要重截图必须先关闭弹窗回到左侧卡片点「截图」,再重新打开弹窗,来回丢工作流。弹窗头部工具栏新增 `#mgRecapture` 按钮,直接复用 `mgCapture()`(读左侧仍在 DOM 中的 `mgWindowSelect` 当前选中句柄)重新拉一帧,弹窗保持打开、`captureImg` 原地刷新。Playwright 实测:点「重新截图」后 `src` 变为新 blob(游戏画面确已推进到下一帧)、弹窗未关闭、无控制台报错。
   - 样式经 `tools/tailwindcss.exe` 重新生成并提交 `wwwroot/tailwind.css`;不涉及 Core,全解决方案编译 0 警告 0 错误,单测数不变。
 - **P7 打磨(2026-07-24)——运行自然结束弹系统通知**(用户要求:跑完指定回合/时长不用一直守着):
   - **落点**:`Host/Ui/EngineManager.OnEngineEvent` 收到 `EngineStopped` 时,若 `Reason != Cancelled`(即到达回合/时长上限的 `Completed`、命中终止图的 `StopFlag`、卡死保护的 `RepeatedSameTarget`)才通知;用户手动点「停止」不弹——那种情况本来就在看着界面。

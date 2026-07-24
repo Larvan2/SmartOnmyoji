@@ -640,6 +640,7 @@ function bindManage() {
   window.addEventListener('mouseup', onStageUp);
   stage.addEventListener('click', onStageClick);
 
+  $('mgRecapture').addEventListener('click', () => mgCapture().catch((e) => toast(e.message, 'error')));
   $('captureModalClose').addEventListener('click', closeCaptureModal);
   $('captureModal').addEventListener('click', (e) => { if (e.target === $('captureModal')) closeCaptureModal(); });
 }
