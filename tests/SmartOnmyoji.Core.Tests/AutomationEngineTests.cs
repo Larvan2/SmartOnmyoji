@@ -219,6 +219,87 @@ public class AutomationEngineTests
     }
 
     [Fact]
+    public async Task Pause_blocks_progress_until_resumed_and_emits_paused_events()
+    {
+        // 起手即置暂停:引擎应在处理任何窗口前挂起,不截图;订阅方收到 EnginePaused(true) 后立即
+        // Resume,借事件流本身做同步(无真实等待),引擎随后继续跑完并按脚本停止。
+        var set = new TargetSet("t", new[] { Img("end", TargetFlag.Stop, 0) });
+        var windows = new FakeWindowService();
+        var captured = false;
+        var capturer = new SequenceCapturer { OnCapture = () => captured = true };
+        var matcher = new ScriptedMatcher(new string?[] { "end" });
+        var input = new RecordingInput();
+        var pauseSource = new PauseTokenSource();
+        pauseSource.Pause();
+
+        var engine = new AutomationEngine(
+            windows, capturer, matcher, input,
+            new[] { Window }, set,
+            sampler: null, random: new Random(12345), pause: pauseSource.Token);
+
+        var events = new List<EngineEvent>();
+        var sawCapturedBeforeResume = false;
+        var consumer = Task.Run(async () =>
+        {
+            await foreach (var evt in engine.Events.ReadAllAsync(CancellationToken.None))
+            {
+                events.Add(evt);
+                if (evt is EnginePaused { Paused: true })
+                {
+                    sawCapturedBeforeResume = captured;
+                    pauseSource.Resume();
+                }
+            }
+        });
+
+        await engine.RunAsync(Options(), CancellationToken.None);
+        await consumer;
+
+        Assert.False(sawCapturedBeforeResume);
+        Assert.True(captured);
+        Assert.Contains(events, e => e is EnginePaused { Paused: true });
+        Assert.Contains(events, e => e is EnginePaused { Paused: false });
+        Assert.Equal(StopReason.StopFlag, LastStop(events));
+    }
+
+    [Fact]
+    public async Task Cancellation_while_paused_is_honored()
+    {
+        // 暂停期间点「停止」(取消)必须立即生效,不能被挂起的 WaitWhilePausedAsync 卡住。
+        var set = new TargetSet("t", new[] { Img("reward", TargetFlag.Normal, 0) });
+        var windows = new FakeWindowService();
+        var captured = false;
+        var capturer = new SequenceCapturer { OnCapture = () => captured = true };
+        var matcher = new ScriptedMatcher(new string?[] { "reward" });
+        var input = new RecordingInput();
+        var pauseSource = new PauseTokenSource();
+        pauseSource.Pause();
+        using var cts = new CancellationTokenSource();
+
+        var engine = new AutomationEngine(
+            windows, capturer, matcher, input,
+            new[] { Window }, set,
+            sampler: null, random: new Random(12345), pause: pauseSource.Token);
+
+        var events = new List<EngineEvent>();
+        var consumer = Task.Run(async () =>
+        {
+            await foreach (var evt in engine.Events.ReadAllAsync(CancellationToken.None))
+            {
+                events.Add(evt);
+                if (evt is EnginePaused { Paused: true })
+                    cts.Cancel();
+            }
+        });
+
+        await engine.RunAsync(Options(rounds: 100), cts.Token);
+        await consumer;
+
+        Assert.False(captured);
+        Assert.Equal(StopReason.Cancelled, LastStop(events));
+    }
+
+    [Fact]
     public async Task Sets_process_priority_at_start_when_configured()
     {
         var set = new TargetSet("t", new[] { Img("end", TargetFlag.Stop, 0) });

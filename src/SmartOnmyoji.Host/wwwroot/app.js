@@ -238,6 +238,17 @@ async function stop() {
   catch (e) { toast('停止失败:' + e.message, 'error'); }
 }
 
+// 暂停/继续复用同一个按钮:按当前状态决定调哪个接口。实际暂停在引擎跑到回合边界才生效
+// (见 EnginePaused 事件),按钮文案随 SSE 状态更新,不在点击瞬间就切换。
+async function togglePause() {
+  const paused = $('pauseBtn').dataset.paused === '1';
+  try {
+    await api(paused ? '/api/engine/resume' : '/api/engine/pause', { method: 'POST' });
+  } catch (e) {
+    toast((paused ? '继续' : '暂停') + '失败:' + e.message, 'error');
+  }
+}
+
 // ---------- 事件流 ----------
 function connectEvents() {
   const es = new EventSource('/api/events');
@@ -247,10 +258,14 @@ function connectEvents() {
 
 function applyState(s) {
   const pill = $('statePill');
-  pill.textContent = s.running ? '运行中' : '空闲';
-  pill.className = 'pill ' + (s.running ? 'running' : 'idle');
+  pill.textContent = s.running ? (s.paused ? '已暂停' : '运行中') : '空闲';
+  pill.className = 'pill ' + (s.running ? (s.paused ? 'paused' : 'running') : 'idle');
   $('startBtn').disabled = s.running;
   $('stopBtn').disabled = !s.running;
+  const pauseBtn = $('pauseBtn');
+  pauseBtn.disabled = !s.running;
+  pauseBtn.dataset.paused = s.paused ? '1' : '0';
+  pauseBtn.textContent = s.paused ? '▶ 继续' : '⏸ 暂停';
   $('roundVal').textContent = s.round;
   setProgress(s.progress);
 }
@@ -271,6 +286,7 @@ function handleEvent(evt) {
       break;
     case 'waiting': appendLog('waiting', `等待 ${evt.seconds.toFixed(1)}s（${evt.reason}）`); break;
     case 'progress': setProgress(evt.percent); break;
+    case 'paused': appendLog('paused', evt.paused ? '已暂停' : '已继续'); break;
     case 'stopped': appendLog('stopped', `停止:${evt.reason}`); break;
     case 'error': appendLog('error', `错误:${evt.message}`); break;
     case 'log': appendLog((evt.level || 'info').toLowerCase(), evt.text); break;
@@ -559,6 +575,7 @@ function bind() {
   $('windowFilter').addEventListener('input', renderWindows);
   $('pickWindow').addEventListener('click', pickWindow);
   $('startBtn').addEventListener('click', start);
+  $('pauseBtn').addEventListener('click', togglePause);
   $('stopBtn').addEventListener('click', stop);
   $('clearLog').addEventListener('click', () => ($('log').innerHTML = ''));
   $('analyzeBtn').addEventListener('click', openAnalyze);

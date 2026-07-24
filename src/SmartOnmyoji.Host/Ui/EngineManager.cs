@@ -33,9 +33,11 @@ public sealed class EngineManager
     private readonly LinkedList<string> _recent = new();
 
     private CancellationTokenSource? _cts;
+    private PauseTokenSource? _pauseSource;
 
     // 运行状态(全部在 _gate 下读写)
     private bool _running;
+    private bool _paused;
     private string? _targetSet;
     private int _windowCount;
     private int _round;
@@ -47,7 +49,7 @@ public sealed class EngineManager
     public StatusDto Status()
     {
         lock (_gate)
-            return new StatusDto(_running, _targetSet, _windowCount, _round, _progress, _startedAt);
+            return new StatusDto(_running, _paused, _targetSet, _windowCount, _round, _progress, _startedAt);
     }
 
     public StartResult Start(StartRequest req)
@@ -78,7 +80,9 @@ public sealed class EngineManager
             OptionsStore.Save(req.Options);
 
             _cts = new CancellationTokenSource();
+            _pauseSource = new PauseTokenSource();
             _running = true;
+            _paused = false;
             _targetSet = req.TargetSet;
             _windowCount = targets.Count;
             _round = 0;
@@ -86,7 +90,8 @@ public sealed class EngineManager
             _startedAt = DateTimeOffset.Now;
 
             var token = _cts.Token;
-            _ = Task.Run(() => RunAsync(options, targets, built.Value.Set, built.Value.Warnings, token));
+            var pauseToken = _pauseSource.Token;
+            _ = Task.Run(() => RunAsync(options, targets, built.Value.Set, built.Value.Warnings, pauseToken, token));
         }
 
         BroadcastState();
@@ -99,6 +104,27 @@ public sealed class EngineManager
         {
             if (!_running || _cts is null) return false;
             _cts.Cancel();
+            return true;
+        }
+    }
+
+    /// <summary>请求暂停:即时生效在下一个回合边界(引擎实际挂起后经 <see cref="EnginePaused"/> 事件回报状态)。</summary>
+    public bool Pause()
+    {
+        lock (_gate)
+        {
+            if (!_running || _pauseSource is null) return false;
+            _pauseSource.Pause();
+            return true;
+        }
+    }
+
+    public bool Resume()
+    {
+        lock (_gate)
+        {
+            if (!_running || _pauseSource is null) return false;
+            _pauseSource.Resume();
             return true;
         }
     }
@@ -123,6 +149,7 @@ public sealed class EngineManager
         IReadOnlyList<WindowInfo> targets,
         TargetSet set,
         IReadOnlyList<string> warnings,
+        PauseToken pause,
         CancellationToken ct)
     {
         var matcher = new TemplateMatcher();
@@ -132,7 +159,8 @@ public sealed class EngineManager
                 Publish(LogEnvelope("Warning", "[目标集] " + w));
 
             var engine = new AutomationEngine(
-                _windows, new GdiWindowCapturer(), matcher, new SendMessageInput(), targets, set);
+                _windows, new GdiWindowCapturer(), matcher, new SendMessageInput(), targets, set,
+                pause: pause);
 
             var consume = Task.Run(async () =>
             {
@@ -153,8 +181,10 @@ public sealed class EngineManager
             lock (_gate)
             {
                 _running = false;
+                _paused = false;
                 _cts?.Dispose();
                 _cts = null;
+                _pauseSource = null;
             }
             BroadcastState();
         }
@@ -170,6 +200,7 @@ public sealed class EngineManager
             {
                 case RoundStarted r: _round = r.Round; stateChanged = true; break;
                 case ProgressChanged p: _progress = p.Percent; stateChanged = true; break;
+                case EnginePaused ep: _paused = ep.Paused; stateChanged = true; break;
                 // 用户主动点「停止」(Cancelled)不弹通知——那种情况用户本来就在看着界面。
                 case EngineStopped s when s.Reason != StopReason.Cancelled:
                     stopped = (s.Reason, _targetSet, _round);
@@ -213,6 +244,7 @@ public sealed class EngineManager
         {
             ["type"] = "state",
             ["running"] = _running,
+            ["paused"] = _paused,
             ["targetSet"] = _targetSet,
             ["windowCount"] = _windowCount,
             ["round"] = _round,
@@ -257,6 +289,8 @@ public sealed class EngineManager
                 d["type"] = "progress"; d["percent"] = p.Percent; break;
             case EngineStopped s:
                 d["type"] = "stopped"; d["reason"] = s.Reason.ToString(); break;
+            case EnginePaused ep:
+                d["type"] = "paused"; d["paused"] = ep.Paused; break;
             case EngineError err:
                 d["type"] = "error"; d["message"] = err.Message; break;
             case LogMessage l:

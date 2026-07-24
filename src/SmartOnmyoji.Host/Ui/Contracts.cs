@@ -67,6 +67,7 @@ public sealed record OptionsDto
 
 public sealed record StatusDto(
     bool Running,
+    bool Paused,
     string? TargetSet,
     int WindowCount,
     int Round,

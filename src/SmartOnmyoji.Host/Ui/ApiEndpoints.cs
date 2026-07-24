@@ -146,6 +146,12 @@ public static class ApiEndpoints
         app.MapPost("/api/engine/stop", (EngineManager mgr) =>
             Results.Ok(new { stopped = mgr.Stop() }));
 
+        app.MapPost("/api/engine/pause", (EngineManager mgr) =>
+            Results.Ok(new { ok = mgr.Pause() }));
+
+        app.MapPost("/api/engine/resume", (EngineManager mgr) =>
+            Results.Ok(new { ok = mgr.Resume() }));
+
         // SSE 事件流:一直挂着,把 EngineManager 扇出的 JSON 行逐条推给浏览器 EventSource。
         app.MapGet("/api/events", async (HttpContext ctx, EngineManager mgr) =>
         {

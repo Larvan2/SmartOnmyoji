@@ -92,6 +92,7 @@
   .pill { padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; }
   .pill.idle { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
   .pill.running { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
+  .pill.paused { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
   .stat { display: flex; align-items: baseline; gap: 6px; }
   .stat label { color: var(--muted); font-size: 12px; }
   .stat b { font-size: 18px; font-variant-numeric: tabular-nums; }
@@ -196,6 +197,7 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.primary:hover { background: var(--accent-2); }
   button.danger { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, var(--border)); }
+  button.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
   .actions { display: flex; gap: 10px; }
   .actions button { flex: 1; padding: 11px; font-size: 14px; font-weight: 600; }
   .hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 2px 2px 8px; }
@@ -215,6 +217,7 @@
   .line.matched .k { color: #0ea5e9; }
   .line.clicked .k { color: var(--ok); }
   .line.waiting .k, .line.waiting .m { color: var(--warn); }
+  .line.paused .k, .line.paused .m { color: var(--warn); font-weight: 600; }
   .line.error .k, .line.error .m { color: var(--error); }
   .line.warning .k, .line.warning .m { color: var(--warn); }
   .line.stopped .k, .line.stopped .m { color: var(--error); font-weight: 600; }

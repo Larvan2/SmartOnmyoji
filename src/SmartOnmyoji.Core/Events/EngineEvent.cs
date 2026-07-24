@@ -31,5 +31,8 @@ public sealed record Clicked(string Name, IReadOnlyList<Point> Points) : EngineE
 public sealed record Waiting(TimeSpan Duration, string Reason) : EngineEvent;
 public sealed record ProgressChanged(int Percent) : EngineEvent;
 public sealed record EngineStopped(StopReason Reason) : EngineEvent;
+
+/// <summary>引擎实际进入/退出暂停(回合边界生效,晚于调用方发起暂停/恢复的那一刻)。</summary>
+public sealed record EnginePaused(bool Paused) : EngineEvent;
 public sealed record EngineError(string Message) : EngineEvent;
 public sealed record LogMessage(EngineLogLevel Level, string Text) : EngineEvent;

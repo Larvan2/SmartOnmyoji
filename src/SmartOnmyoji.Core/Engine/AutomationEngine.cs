@@ -27,6 +27,7 @@ public sealed class AutomationEngine : IAutomationEngine
     private readonly TargetSet _targetSet;
     private readonly Random _random;
     private readonly IAntiDetectionPolicy? _antiDetectionOverride;
+    private readonly PauseToken _pause;
 
     public AutomationEngine(
         IWindowService windows,
@@ -37,7 +38,8 @@ public sealed class AutomationEngine : IAutomationEngine
         TargetSet targetSet,
         OffsetSampler? sampler = null,
         Random? random = null,
-        IAntiDetectionPolicy? antiDetection = null)
+        IAntiDetectionPolicy? antiDetection = null,
+        PauseToken pause = default)
     {
         _windows = windows;
         _capturer = capturer;
@@ -48,6 +50,7 @@ public sealed class AutomationEngine : IAutomationEngine
         _random = random ?? Random.Shared;
         _sampler = sampler ?? new OffsetSampler(_random);
         _antiDetectionOverride = antiDetection;
+        _pause = pause;
     }
 
     public ChannelReader<EngineEvent> Events => _channel.Reader;
@@ -80,6 +83,14 @@ public sealed class AutomationEngine : IAutomationEngine
 
             while (!cancellationToken.IsCancellationRequested)
             {
+                // 仅在回合边界响应暂停:不会打断正在进行中的截图/匹配/点击。
+                if (_pause.IsPaused)
+                {
+                    await writer.WriteAsync(new EnginePaused(true), cancellationToken);
+                    await _pause.WaitWhilePausedAsync(cancellationToken);
+                    await writer.WriteAsync(new EnginePaused(false), cancellationToken);
+                }
+
                 if (Finished(options, state, deadline))
                     break;
 
