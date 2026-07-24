@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Drawing;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -22,6 +23,8 @@ public sealed class MainForm : Form
         Height = 1200;
         MinimumSize = new System.Drawing.Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
+        // 标题栏/任务栏图标:直接取 exe 自带图标(与 csproj 的 ApplicationIcon 保持一致),避免重复维护一份 .ico 引用
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
         _web = new WebView2 { Dock = DockStyle.Fill };
         Controls.Add(_web);

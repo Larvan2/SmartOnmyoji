@@ -8,6 +8,8 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- 可执行文件图标:沿用旧版 python-legacy/logo.ico -->
+    <ApplicationIcon>..\..\python-legacy\logo.ico</ApplicationIcon>
     <!-- WebView2 桌面外壳需要 WinForms 宿主窗口 -->
     <UseWindowsForms>true</UseWindowsForms>
     <!-- WebView2 包同时带 WPF 包装(我们只用 WinForms),其 WindowsBase 版本冲突为良性,降为消息 -->
