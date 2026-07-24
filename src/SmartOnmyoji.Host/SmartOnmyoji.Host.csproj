@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WinExe = Windows GUI 子系统:发行版跑 `ui` 时不再弹黑色控制台窗口。
+         控制台冒烟命令经 `dotnet run` 跑时,dotnet 重定向子进程 stdout 转发到终端,
+         与子系统无关,输出照常可见(已实测)。 -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- WebView2 桌面外壳需要 WinForms 宿主窗口 -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- WebView2 包同时带 WPF 包装(我们只用 WinForms),其 WindowsBase 版本冲突为良性,降为消息 -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <!--
+    P8:发行版(Release)以管理员运行(UIPI,见 app.manifest / 设计文档 §11)——启动即触发 UAC。
+    仅 Release 声明:Debug 保持不提权,让 headless `serve`+curl / `list` / `match` 等
+    "不触及游戏"的开发/验证命令免 UAC(对齐 CLAUDE.md);Debug 下跑触及游戏的命令用 `sudo`。
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <!-- 进程内起 Kestrel + SSE 事件流 + 静态 WebUI(见设计文档 §3/§10) -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartOnmyoji.Core\SmartOnmyoji.Core.csproj" />
+    <ProjectReference Include="..\SmartOnmyoji.Windows\SmartOnmyoji.Windows.csproj" />
+    <ProjectReference Include="..\SmartOnmyoji.Vision\SmartOnmyoji.Vision.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+  </ItemGroup>
+
+  <!-- 原生 WebUI 静态资源:拷到输出目录,ContentRoot 固定为 BaseDirectory 后由 UseStaticFiles 提供 -->
+  <ItemGroup>
+    <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    Tailwind CSS 生成(可选):默认 dotnet build 不跑,直接用已提交的 wwwroot/tailwind.css(构建不依赖 node/工具链)。
+    改样式后重新生成(需官方 v4 standalone 的 tools/tailwindcss.exe,已 gitignore):
+      dotnet build src/SmartOnmyoji.Host -p:TailwindBuild=true
+    也可用 CLI 直接跑(见 Styles/app.tw.css 顶部注释,支持 watch 热更新)。
+  -->
+  <Target Name="BuildTailwind" BeforeTargets="BeforeBuild" Condition="'$(TailwindBuild)' == 'true'">
+    <PropertyGroup>
+      <TailwindExe Condition="'$(TailwindExe)' == ''">$(MSBuildThisFileDirectory)..\..\tools\tailwindcss.exe</TailwindExe>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(TailwindExe)')"
+           Text="找不到 Tailwind CLI: $(TailwindExe)。请放置官方 v4 standalone 到 tools/,或用 -p:TailwindExe=&lt;路径&gt; 指定。" />
+    <Message Importance="high" Text="Tailwind: 生成 wwwroot/tailwind.css …" />
+    <Exec Command="&quot;$(TailwindExe)&quot; -i &quot;$(MSBuildThisFileDirectory)Styles\app.tw.css&quot; -o &quot;$(MSBuildThisFileDirectory)wwwroot\tailwind.css&quot; --minify" />
+  </Target>
+
+  <!--
+    P8:发布后自动把仓库根 img\(目标集,已 gitignore)拷到发布目录 exe 旁,做到"开箱即用"。
+    发行版的 exe 在自己所在目录找 img\(见 TargetSetCatalog.ResolveImgRoot),故拷到 $(PublishDir)img\。
+    只在 publish 时跑(AfterTargets=Publish);img\ 不存在则跳过。img\ 是数据非二进制,不进单文件 exe。
+  -->
+  <Target Name="CopyImgToPublish" AfterTargets="Publish"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\img')">
+    <ItemGroup>
+      <_ImgFiles Include="$(MSBuildThisFileDirectory)..\..\img\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ImgFiles)"
+          DestinationFiles="@(_ImgFiles->'$(PublishDir)img\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="[打包] 已复制仓库 img\ → $(PublishDir)img\" />
+  </Target>
+
+</Project>

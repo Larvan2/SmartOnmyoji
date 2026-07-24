@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SmartOnmyoji · 御魂助手</title>
+  <link rel="stylesheet" href="tailwind.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">式</span>
+      <div>
+        <div class="title">SmartOnmyoji</div>
+        <div class="subtitle">御魂助手</div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-view="run">运行</button>
+      <button class="tab" data-view="manage">目标管理</button>
+    </nav>
+    <div class="status">
+      <span id="statePill" class="pill idle">空闲</span>
+      <span class="stat"><label>回合</label><b id="roundVal">0</b></span>
+      <div class="progress"><div id="progressBar" class="progress-inner"></div></div>
+      <span id="progressVal" class="stat-pct">0%</span>
+    </div>
+  </header>
+
+  <main class="run-grid" id="view-run">
+    <!-- 左:运行 / 控制(合并大格子:参数 + 启停 + 防检测) -->
+    <section class="col col-control">
+      <div class="card control-card">
+        <div class="control-head">
+          <h2>运行 / 控制</h2>
+          <div class="actions">
+            <button id="startBtn" class="primary">▶ 启动</button>
+            <button id="stopBtn" class="danger" disabled>■ 停止</button>
+          </div>
+        </div>
+
+        <div class="params-grid">
+          <div class="field span2">
+            <label>模式</label>
+            <div class="seg">
+              <label><input type="radio" name="mode" value="ByRounds" checked /> 按回合</label>
+              <label><input type="radio" name="mode" value="ByMinutes" /> 按时长</label>
+            </div>
+          </div>
+          <div class="field" id="roundsField">
+            <label>回合数</label>
+            <input type="number" id="rounds" min="1" step="1" />
+          </div>
+          <div class="field hidden" id="durationField">
+            <label>时长(分钟)</label>
+            <input type="number" id="durationMinutes" min="1" step="1" />
+          </div>
+          <div class="field">
+            <label>进程优先级</label>
+            <select id="priority">
+              <option value="">不修改</option>
+              <option value="Normal">Normal</option>
+              <option value="AboveNormal">AboveNormal</option>
+              <option value="High">High</option>
+            </select>
+          </div>
+          <div class="field span2">
+            <label>匹配间隔(秒)</label>
+            <div class="pair">
+              <input type="number" id="intervalMin" min="0" step="0.1" />
+              <span>~</span>
+              <input type="number" id="intervalMax" min="0" step="0.1" />
+            </div>
+          </div>
+          <div class="field">
+            <label>匹配阈值</label>
+            <input type="number" id="matchThreshold" min="0" max="1" step="0.01" />
+          </div>
+        </div>
+
+        <p class="hint">⚠ 阴阳师以管理员运行,本程序须<b>以管理员启动</b>,否则后台点击会被静默丢弃。</p>
+
+        <div class="anti">
+          <div class="subhead collapsible" id="antiHead">防检测 <span class="chev">▾</span></div>
+          <div id="antiBody">
+            <label class="check"><input type="checkbox" id="antiEnabled" /> 启用防检测</label>
+            <div class="params-grid">
+              <div class="field">
+                <label>点击偏移 σ(px)</label>
+                <input type="number" id="clickDeviation" min="0" step="1" />
+              </div>
+              <div class="field checkfield">
+                <label class="check"><input type="checkbox" id="repeatStop" /> 连续同图停</label>
+              </div>
+              <div class="field">
+                <label>卡死保护 N 次</label>
+                <input type="number" id="repeatN" min="2" step="1" />
+              </div>
+            </div>
+
+            <div class="sub">概率随机等待 <label class="check inline"><input type="checkbox" id="rwEnabled" /> 启用</label></div>
+            <div class="params-grid">
+              <div class="field">
+                <label>概率</label>
+                <input type="number" id="rwProbability" min="0" max="1" step="0.01" />
+              </div>
+              <div class="field">
+                <label>最小间隔(秒)</label>
+                <input type="number" id="rwGap" min="0" step="1" />
+              </div>
+              <div class="field span2">
+                <label>等待秒范围</label>
+                <div class="pair">
+                  <input type="number" id="rwMin" min="0" step="1" />
+                  <span>~</span>
+                  <input type="number" id="rwMax" min="0" step="1" />
+                </div>
+              </div>
+            </div>
+
+            <div class="sub">时间窗口频次上限 <label class="check inline"><input type="checkbox" id="fcEnabled" /> 启用</label></div>
+            <div class="params-grid">
+              <div class="field">
+                <label>窗口(分)</label>
+                <input type="number" id="fcWindow" min="1" step="1" />
+              </div>
+              <div class="field">
+                <label>上限局数</label>
+                <input type="number" id="fcMax" min="1" step="1" />
+              </div>
+              <div class="field">
+                <label>额外等待(秒)</label>
+                <input type="number" id="fcExtra" min="0" step="1" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 中:目标集 + 窗口 -->
+    <section class="col col-sources">
+      <div class="card">
+        <h2>目标集(玩法)</h2>
+        <div class="row">
+          <select id="targetSelect"></select>
+          <button id="refreshTargets" class="ghost" title="刷新目标集">↻</button>
+        </div>
+        <div id="targetMeta" class="meta"></div>
+        <div id="thumbs" class="thumbs"></div>
+      </div>
+
+      <div class="card grow">
+        <h2>游戏窗口</h2>
+        <div class="row">
+          <input id="windowFilter" class="win-filter" placeholder="筛选标题…" value="阴阳师" />
+          <button id="refreshWindows" class="ghost">刷新</button>
+          <button id="pickWindow" class="ghost">点选</button>
+        </div>
+        <div id="windowList" class="window-list"></div>
+      </div>
+    </section>
+
+    <!-- 右:日志 -->
+    <section class="col col-log">
+      <div class="log-panel">
+        <div class="log-head">
+          <h2>运行日志</h2>
+          <div class="log-tools">
+            <label class="check inline"><input type="checkbox" id="autoScroll" checked /> 自动滚动</label>
+            <button id="analyzeBtn" class="ghost">点击分析</button>
+            <button id="clearLog" class="ghost">清空</button>
+          </div>
+        </div>
+        <div id="log" class="log"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 目标管理视图 -->
+  <main class="manage hidden" id="view-manage">
+    <section class="panel manage-left">
+      <div class="card">
+        <h2>新建目标集</h2>
+        <div class="row">
+          <input id="newSetName" placeholder="玩法名(拼音,如 huntu)" />
+          <button id="createSet" class="primary">创建</button>
+        </div>
+        <p class="hint">创建后在 <code>img/&lt;名称&gt;/</code> 下生成目录与空 <code>target.json</code>,由软件托管。</p>
+      </div>
+
+      <div class="card">
+        <h2>编辑目标集</h2>
+        <div class="row">
+          <select id="mgTargetSelect"></select>
+          <button id="mgRefresh" class="ghost" title="刷新">↻</button>
+          <button id="mgOpenFolder" class="ghost" title="在资源管理器中打开该目标集的文件夹" disabled>打开文件夹</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>截图取模板</h2>
+        <div class="row">
+          <input id="mgWindowFilter" class="win-filter" placeholder="筛选标题…" value="阴阳师" />
+          <button id="mgWinRefresh" class="ghost" title="刷新窗口">↻</button>
+        </div>
+        <div class="row">
+          <select id="mgWindowSelect"></select>
+          <button id="mgCapture" class="ghost">截图</button>
+        </div>
+        <div id="captureStage" class="capture-stage empty">
+          <img id="captureImg" alt="" />
+          <div id="selRect" class="sel-rect hidden"></div>
+          <div id="pointLayer" class="point-layer"></div>
+          <div class="capture-placeholder">选窗口后点「截图」</div>
+        </div>
+        <div class="capture-tools">
+          <button id="modeCrop" class="chip active">框选模板</button>
+          <span id="selInfo" class="meta"></span>
+        </div>
+        <div class="row">
+          <input id="newImgName" placeholder="模板文件名(如 tiaozhan)" />
+          <button id="saveCrop" class="primary" disabled>保存选区为模板</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel manage-right">
+      <div class="card grow">
+        <div class="log-head">
+          <h2 id="mgImagesTitle">图片(target.json)</h2>
+          <button id="saveTargetJson" class="primary" disabled>保存 target.json</button>
+        </div>
+        <div id="mgImagesHead" class="mg-row mg-row-head hidden">
+          <span></span>
+          <span></span>
+          <span>图片名</span>
+          <span>标记</span>
+          <span>优先级</span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div id="mgImages" class="mg-images"><div class="empty">先在左侧选择要编辑的目标集</div></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 点击位置分析:本次运行的点击落点统计(数据来自事件流,不落文件,关闭即随运行清空) -->
+  <div id="analyzeModal" class="analyze-modal hidden">
+    <div class="analyze-dialog">
+      <div class="analyze-head">
+        <h2>点击位置分析 · 本次运行</h2>
+        <div class="analyze-tools">
+          <span id="analyzeSummary" class="meta"></span>
+          <button id="analyzeClear" class="ghost">清空</button>
+          <button id="analyzeClose" class="ghost">✕ 关闭</button>
+        </div>
+      </div>
+      <div class="analyze-body" id="analyzeBody">
+        <div class="analyze-chart wide">
+          <h3>点击散点(客户区坐标,按目标着色)</h3>
+          <canvas id="chartScatter"></canvas>
+        </div>
+        <div class="analyze-chart">
+          <h3>各目标点击次数</h3>
+          <canvas id="chartTargets"></canvas>
+        </div>
+        <div class="analyze-chart">
+          <h3>点击时段分布</h3>
+          <canvas id="chartTime"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,3 +1,21 @@
 Release
 build
+
+
 click_log/
+.venv/
+.vscode/
+*.spec
+/img
+
+
+__pycache__/
+
+# .NET 构建产物
+bin/
+obj/
+.artifacts/
+/release/
+
+# Tailwind standalone CLI(本地工具,勿提交;生成的 wwwroot/tailwind.css 才提交)
+tools/

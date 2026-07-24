@@ -1,0 +1,18 @@
+[project]
+name = "smartonmyoji"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "opencv-python==4.11.0.86",
+    "pillow==11.3.0",
+    "pyautogui==0.9.54",
+    "pyinstaller==6.10.0",
+    "pyqt5==5.15.11",
+    "pyqt5-qt5==5.15.2",
+    "pywin32==311",
+]
+[[tool.uv.index]]
+name = "tuna"
+url = "https://mirrors.ustc.edu.cn/pypi/simple/"

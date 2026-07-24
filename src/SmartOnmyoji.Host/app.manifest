@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="SmartOnmyoji.Host" type="win32" />
+
+  <!--
+    ⚠ 必须以管理员运行:阴阳师进程以管理员权限运行,未提权进程的合成输入
+    (SendMessage / mouse_event)会被 Windows UIPI 静默丢弃(SendMessage 还照返回成功)。
+    这是"后台点击没反应"的真正原因(与 DPI/缩放无关)。发行版据此声明 requireAdministrator,
+    启动即触发 UAC 提权。开发期跑触及游戏的命令可改用 `sudo <命令>` 临时提权。
+    见 docs/csharp-rewrite-design.md §11 与项目 CLAUDE.md。
+  -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <!--
+    DPI 感知不在此声明:全项目在 Program.cs 启动时调用 DpiAwareness.EnablePerMonitorV2()
+    统一设置(设计文档 §11 P1 唯一事实源),避免 manifest 与运行时双份声明。
+    仅声明受支持的 Windows 版本(取消系统对旧 API 的兼容垫片)。
+  -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+</assembly>
