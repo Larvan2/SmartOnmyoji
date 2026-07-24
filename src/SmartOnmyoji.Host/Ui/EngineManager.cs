@@ -163,17 +163,32 @@ public sealed class EngineManager
     private void OnEngineEvent(EngineEvent evt)
     {
         var stateChanged = false;
+        (StopReason Reason, string? TargetSet, int Round)? stopped = null;
         lock (_gate)
         {
             switch (evt)
             {
                 case RoundStarted r: _round = r.Round; stateChanged = true; break;
                 case ProgressChanged p: _progress = p.Percent; stateChanged = true; break;
+                // 用户主动点「停止」(Cancelled)不弹通知——那种情况用户本来就在看着界面。
+                case EngineStopped s when s.Reason != StopReason.Cancelled:
+                    stopped = (s.Reason, _targetSet, _round);
+                    break;
             }
         }
         Publish(EventEnvelope(evt));
         if (stateChanged) BroadcastState();
+        if (stopped is { } st)
+            CompletionNotifier.Notify("SmartOnmyoji · 御魂助手", BuildStopMessage(st.Reason, st.TargetSet, st.Round));
     }
+
+    private static string BuildStopMessage(StopReason reason, string? targetSet, int round) => reason switch
+    {
+        StopReason.Completed => $"目标集「{targetSet}」已跑完,共 {round} 回合",
+        StopReason.StopFlag => $"目标集「{targetSet}」命中终止图标,已在第 {round} 回合停止",
+        StopReason.RepeatedSameTarget => $"检测到反复卡在同一目标,已在第 {round} 回合自动停止",
+        _ => $"运行已结束(第 {round} 回合)",
+    };
 
     private void Publish(string json)
     {

@@ -526,6 +526,10 @@ Host (Kestrel, localhost)
   - **改法**:复用运行页「点击位置分析」同款遮罩弹窗模式,新增 `#captureModal`(`min(1400px, 94vw)`)。左侧卡片只留窗口筛选/选择/截图按钮;点「截图」成功、或在右侧图片行点「偏移点」时打开弹窗。原截图区的全部 DOM(`captureStage`/`captureImg`/`selRect`/`pointLayer`)与保存控制原样搬进弹窗,框选拖拽/归一化点选的坐标换算逻辑不变(仍按 `imgRect()` 相对定位),只是 `captureImg` 从撑满容器改成 `max-width/max-height` 居中 letterbox 显示;新增 `.capture-canvas` 包裹层,确保 letterbox 留白下 `selRect`/`pointLayer` 的绝对定位仍与图片精确对齐(而非相对外层弹窗偏移)。若在右侧点「偏移点」但本次会话还没截图,不再打开空弹窗死路,改为 toast 提示先去左侧截图。
   - **实测**:临时 Playwright 脚本跑 `serve` headless,连上本机真实运行的阴阳师窗口截图成功,弹窗按预期打开、拖拽框选的选区与鼠标轨迹像素级对齐(误差 <1px)、关闭按钮正常隐藏、全程无 JS 控制台报错。
   - 样式经 `tools/tailwindcss.exe` 重新生成并提交 `wwwroot/tailwind.css`;不涉及 Core,全解决方案编译 0 警告 0 错误,单测数不变。
+- **P7 打磨(2026-07-24)——运行自然结束弹系统通知**(用户要求:跑完指定回合/时长不用一直守着):
+  - **落点**:`Host/Ui/EngineManager.OnEngineEvent` 收到 `EngineStopped` 时,若 `Reason != Cancelled`(即到达回合/时长上限的 `Completed`、命中终止图的 `StopFlag`、卡死保护的 `RepeatedSameTarget`)才通知;用户手动点「停止」不弹——那种情况本来就在看着界面。
+  - **`Host/Ui/CompletionNotifier`**:独立 STA 后台线程起临时 `NotifyIcon` 显气泡通知(6s)+ `SystemSounds.Asterisk` 提示音,不依赖 `ui`(WebView2 消息循环)或 `serve`(无消息循环)哪种宿主模式在跑——两边都能弹,失败静默不影响引擎主流程。放 Host 层(不进 Core):Core 引擎不知道 UI/系统通知存在,`EngineManager` 仍是唯一把事件接到宿主能力的地方,对齐 §10。
+  - 全解决方案编译 0 警告 0 错误,75 单测全绿(不涉及 Core,无新增单测)。
 
 ---
 
