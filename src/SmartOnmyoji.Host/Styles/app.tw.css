@@ -108,7 +108,14 @@
   .col-log .log-panel { flex: 1; min-height: 0; }
   .card.grow { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-  .control-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  /* 吸顶:启停/暂停按钮常驻可见,不随控制卡片里一长串参数表单滚走。
+     负 margin 抵消 .card 的内边距、把吸顶条铺满卡片全宽,再用等值 padding 补回视觉间距。 */
+  .control-head {
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; z-index: 5;
+    margin: -14px -14px 12px; padding: 14px 14px 10px;
+    background: var(--card); border-radius: 12px 12px 0 0; border-bottom: 1px solid var(--border);
+  }
   .control-head h2 { margin: 0; }
   .control-head .actions { flex: 0 0 auto; gap: 8px; }
   .control-head .actions button { flex: 0 0 auto; padding: 8px 16px; font-size: 13px; }
