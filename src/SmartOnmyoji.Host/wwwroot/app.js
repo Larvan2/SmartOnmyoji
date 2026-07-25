@@ -72,7 +72,13 @@ let allWindows = [];
 
 async function loadWindows() {
   allWindows = await api('/api/windows');
+  // 窗口关掉重开后句柄会变:旧句柄若留在选择里,启动时后端一直报「找不到窗口」,
+  // 而它的复选框早已随枚举结果消失、用户无从取消。故每次枚举都按最新句柄剪枝。
+  const alive = new Set(allWindows.map((w) => w.handle));
+  const dropped = [...selectedHandles].filter((h) => !alive.has(h));
+  for (const h of dropped) selectedHandles.delete(h);
   renderWindows();
+  if (dropped.length) toast(`已取消 ${dropped.length} 个已关闭窗口的选择,请重新勾选`, 'info');
 }
 
 function renderWindows() {
@@ -116,6 +122,9 @@ async function pickWindow() {
     if (!w) { toast('未取到前台窗口', 'error'); return; }
     selectedHandles.add(w.handle);
     await loadWindows();
+    // 枚举只收「可见 + 有标题」的窗口,和后端启动时的查找口径一致;
+    // 点中的窗口若不在其中会被上面剪掉,此时如实告知,别报「已选」却什么都没勾上。
+    if (!selectedHandles.has(w.handle)) { toast(`「${w.title || '(无标题)'}」不在可选窗口列表里`, 'error'); return; }
     toast(`已选:${w.title}`, 'ok');
   } catch (e) {
     toast('点选失败:' + e.message, 'error');
