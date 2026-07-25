@@ -93,6 +93,7 @@ function renderWindows() {
     cb.type = 'checkbox';
     cb.value = w.handle;
     cb.checked = selectedHandles.has(w.handle);
+    cb.disabled = engineRunning;   // 列表是动态重建的,容器的锁定态得逐个补上
     cb.addEventListener('change', () => {
       if (cb.checked) selectedHandles.add(w.handle);
       else selectedHandles.delete(w.handle);
@@ -281,6 +282,21 @@ function applyState(s) {
   pauseBtn.textContent = s.paused ? '▶ 继续' : '⏸ 暂停';
   $('roundVal').textContent = s.round;
   setProgress(s.progress);
+  setParamsLocked(s.running);
+}
+
+// 运行中锁定所有「启动时快照」的设置(运行参数 / 防检测 / 目标集 / 窗口选择):
+// 它们在 EngineManager.Start 那一刻打包送进引擎,运行中改了也不影响当前这轮,
+// 置灰避免误以为是热更新。启停按钮与日志区不在锁定范围内。
+let engineRunning = false;
+
+function setParamsLocked(locked) {
+  engineRunning = locked;
+  $('lockNote').classList.toggle('hidden', !locked);
+  for (const box of document.querySelectorAll('[data-run-lock]')) {
+    box.classList.toggle('locked', locked);
+    for (const el of box.querySelectorAll('input, select, button')) el.disabled = locked;
+  }
 }
 
 function setProgress(p) {

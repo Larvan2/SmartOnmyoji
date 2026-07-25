@@ -153,6 +153,13 @@
   }
   select { flex: 1; }
   input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; border-color: var(--accent); }
+  input:disabled, select:disabled { cursor: not-allowed; color: var(--muted); }
+
+  /* 运行中锁定([data-run-lock] 容器):这些设置都是启动时的快照,改了也不影响当前这轮 */
+  .locked { opacity: .6; }
+  .locked .check, .locked .seg label, .locked .win-row { cursor: not-allowed; }
+  .locked .win-row:hover { border-color: var(--border); }
+  .lock-note { color: var(--warn); }
 
   .field { margin-top: 10px; }
   .field > label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }

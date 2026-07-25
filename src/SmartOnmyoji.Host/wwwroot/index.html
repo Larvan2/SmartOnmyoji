@@ -39,7 +39,9 @@
           </div>
         </div>
 
-        <div class="params-grid">
+        <p id="lockNote" class="hint lock-note hidden">🔒 运行中已锁定:参数 / 目标集 / 窗口选择都在启动那一刻生效,改动需停止后重新启动。</p>
+
+        <div class="params-grid" data-run-lock>
           <div class="field span2">
             <label>模式</label>
             <div class="seg">
@@ -80,7 +82,7 @@
 
         <p class="hint">⚠ 阴阳师以管理员运行,本程序须<b>以管理员启动</b>,否则后台点击会被静默丢弃。</p>
 
-        <div class="anti">
+        <div class="anti" data-run-lock>
           <div class="subhead collapsible" id="antiHead">防检测 <span class="chev">▾</span></div>
           <div id="antiBody">
             <label class="check"><input type="checkbox" id="antiEnabled" /> 启用防检测</label>
@@ -142,7 +144,7 @@
     <section class="col col-sources">
       <div class="card">
         <h2>目标集(玩法)</h2>
-        <div class="row">
+        <div class="row" data-run-lock>
           <select id="targetSelect"></select>
           <button id="refreshTargets" class="ghost" title="刷新目标集">↻</button>
         </div>
@@ -150,7 +152,7 @@
         <div id="thumbs" class="thumbs"></div>
       </div>
 
-      <div class="card grow">
+      <div class="card grow" data-run-lock>
         <h2>游戏窗口</h2>
         <div class="row">
           <input id="windowFilter" class="win-filter" placeholder="筛选标题…" value="阴阳师" />
