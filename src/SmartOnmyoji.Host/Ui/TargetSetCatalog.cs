@@ -36,7 +36,10 @@ public static class TargetSetCatalog
 
     public static string FolderPath(string name) => Path.Combine(ImgRoot, name);
 
-    /// <summary>枚举所有目标集(含至少一张 jpg/png 的子目录)。</summary>
+    /// <summary>
+    /// 枚举所有目标集:含至少一张 jpg/png 的子目录,外加<b>软件托管建出的空集</b>(有 target.json、还没截模板)。
+    /// 空集必须列出——目标管理要能选中它往里加图,否则「新建完就消失」;运行页自行按 imageCount 屏蔽不可跑的空集。
+    /// </summary>
     public static IReadOnlyList<TargetSetSummaryDto> List()
     {
         if (!Directory.Exists(ImgRoot)) return Array.Empty<TargetSetSummaryDto>();
@@ -45,7 +48,7 @@ public static class TargetSetCatalog
         foreach (var dir in Directory.EnumerateDirectories(ImgRoot).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
         {
             var images = ImageFiles(dir).Count;
-            if (images == 0) continue;
+            if (images == 0 && !TargetSetLoader.Exists(dir)) continue;
             sets.Add(new TargetSetSummaryDto(Path.GetFileName(dir), images, SourceOf(dir)));
         }
         return sets;
@@ -79,7 +82,12 @@ public static class TargetSetCatalog
         if (!Directory.Exists(folder)) return null;
 
         if (TargetSetLoader.Exists(folder))
-            return (TargetSetLoader.Load(folder), "target.json", Array.Empty<string>());
+        {
+            var set = TargetSetLoader.Load(folder);
+            // 空集(刚建出、还没截模板)不可跑:与"目录无图"同样返回 null,调用方给「没有可用模板」提示。
+            if (set.Images.Count == 0) return null;
+            return (set, "target.json", Array.Empty<string>());
+        }
 
         if (File.Exists(Path.Combine(folder, "img_pos.json")))
         {

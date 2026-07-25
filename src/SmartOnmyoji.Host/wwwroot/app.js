@@ -26,10 +26,14 @@ async function loadTargets() {
   for (const s of sets) {
     const o = document.createElement('option');
     o.value = s.name;
-    o.textContent = `${s.name}（${s.imageCount} 图 · ${s.source}）`;
+    // 空集(在目标管理刚建出、还没截模板)列出但不可选:选中它启动必失败。
+    o.disabled = s.imageCount === 0;
+    o.textContent = s.imageCount === 0
+      ? `${s.name}（尚无模板）`
+      : `${s.name}（${s.imageCount} 图 · ${s.source}）`;
     sel.appendChild(o);
   }
-  if (prev && sets.some((s) => s.name === prev)) sel.value = prev;
+  if (prev && sets.some((s) => s.name === prev && s.imageCount > 0)) sel.value = prev;
   if (sel.value) await onTargetChange();
 }
 
