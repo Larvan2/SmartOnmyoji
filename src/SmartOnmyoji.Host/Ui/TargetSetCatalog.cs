@@ -1,5 +1,8 @@
 using System.Diagnostics;
+using SmartOnmyoji.Core;
 using SmartOnmyoji.Core.Targets;
+// Host 是 WinForms 项目,全局 using 了 System.Drawing —— 显式指名用领域里的 Size(客户区像素尺寸)。
+using Size = SmartOnmyoji.Core.Size;
 
 namespace SmartOnmyoji.Host.Ui;
 
@@ -69,7 +72,8 @@ public static class TargetSetCatalog
                 Path.GetFileName(i.FilePath),
                 i.Priority,
                 i.Flag.ToString(),
-                i.Click is { Points.Count: > 0 }))
+                i.Click is { Points.Count: > 0 },
+                i.BaseSize))
             .ToList();
 
         return new TargetSetDetailDto(name, built.Value.Source, images, built.Value.Warnings);
@@ -210,8 +214,13 @@ public static class TargetSetCatalog
         return (true, null);
     }
 
-    /// <summary>把一张截图裁剪(PNG/JPG 字节)存为该目标集的模板文件。返回落盘后的裸文件名。</summary>
-    public static (bool Ok, string? Error, string? File) SaveImage(string name, string fileName, byte[] bytes)
+    /// <summary>
+    /// 把一张截图裁剪(PNG/JPG 字节)存为该目标集的模板文件。返回落盘后的裸文件名。
+    /// <paramref name="baseSize"/> 是截图时的客户区尺寸,会一并记进 target.json,
+    /// 供匹配器把模板缩放到其它分辨率复用(见 <c>TemplateScale</c>)。
+    /// </summary>
+    public static (bool Ok, string? Error, string? File) SaveImage(
+        string name, string fileName, byte[] bytes, Size? baseSize = null)
     {
         var folder = FolderPath(name);
         if (!Directory.Exists(folder))
@@ -228,7 +237,40 @@ public static class TargetSetCatalog
             return (false, "空图片数据。", null);
 
         File.WriteAllBytes(Path.Combine(folder, safe), bytes);
+        RecordBaseSize(folder, safe, baseSize);
         return (true, null, safe);
+    }
+
+    /// <summary>
+    /// 把「截图时的客户区尺寸」记进 target.json 对应条目。这个值<b>只有截图这一刻知道</b>,
+    /// 漏记就再也补不回来,所以存图即落盘,不等用户点「保存 target.json」。
+    /// 目录还没有 target.json(旧目标集 / 纯目录扫描来源)时不在此新建——免得悄悄改变来源判定、
+    /// 把 img_pos.json 的 flag 语义甩掉;那种情况由前端 PUT 整份 json 时带上 baseSize。
+    /// </summary>
+    private static void RecordBaseSize(string folder, string file, Size? baseSize)
+    {
+        if (baseSize is not { Width: > 0, Height: > 0 }) return;
+        if (!TargetSetLoader.Exists(folder)) return;
+
+        var path = Path.Combine(folder, TargetSetLoader.FileName);
+        TargetSetJson dto;
+        try { dto = TargetSetSerializer.Deserialize(File.ReadAllText(path)); }
+        catch { return; }  // 手工改坏的 json 不在"存图"这条路上纠正,留给编辑页报错
+
+        var entry = dto.Images.FirstOrDefault(i => string.Equals(i.File, file, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            entry = new TargetImageJson
+            {
+                File = file,
+                Flag = TargetFlag.Normal,
+                Priority = dto.Images.Count == 0 ? 10 : dto.Images.Max(i => i.Priority) + 10,
+            };
+            dto.Images.Add(entry);
+        }
+
+        entry.BaseSize = baseSize;
+        File.WriteAllText(path, TargetSetSerializer.Serialize(dto));
     }
 
     /// <summary>删除目标集里的一张模板文件(拦路径穿越)。</summary>

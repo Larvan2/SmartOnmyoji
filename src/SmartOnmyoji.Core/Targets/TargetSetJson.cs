@@ -41,6 +41,13 @@ public sealed class TargetImageJson
 
     /// <summary>本图匹配器覆盖;为 null 时用 <see cref="TargetDefaultsJson.Matcher"/>。</summary>
     public MatchHint? Matcher { get; set; }
+
+    /// <summary>
+    /// 截取此模板时的客户区尺寸(物理像素),形如 <c>"baseSize": { "width": 1200, "height": 600 }</c>。
+    /// 由目标管理截图取模板时自动记录,用户不必手填;运行时据此把模板缩放到当前分辨率再匹配。
+    /// 缺省(旧目标集)= 不缩放。
+    /// </summary>
+    public Size? BaseSize { get; set; }
 }
 
 /// <summary>偏移点击定义:<c>clickPos</c> 是客户区归一化坐标 [[x,y],…],x/y ∈ [0,1]。</summary>

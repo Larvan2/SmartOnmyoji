@@ -87,6 +87,50 @@ public class TargetSetSerializerTests
     }
 
     [Fact]
+    public void BaseSize_roundtrips_and_reaches_domain_model()
+    {
+        // baseSize = 截取模板时的客户区尺寸,是模板跨分辨率复用的唯一依据,必须能完整往返到运行期模型。
+        const string json = """
+        {
+          "name": "御魂",
+          "images": [
+            { "file": "start.png", "priority": 10, "baseSize": { "width": 1200, "height": 600 } },
+            { "file": "old.png",   "priority": 20 }
+          ]
+        }
+        """;
+
+        var dto = TargetSetSerializer.Deserialize(json);
+        Assert.Equal(new Size(1200, 600), dto.Images.Single(i => i.File == "start.png").BaseSize);
+        Assert.Null(dto.Images.Single(i => i.File == "old.png").BaseSize);
+
+        var back = TargetSetSerializer.Deserialize(TargetSetSerializer.Serialize(dto));
+        Assert.Equal(new Size(1200, 600), back.Images.Single(i => i.File == "start.png").BaseSize);
+
+        var set = TargetSetLoader.FromJson(back, @"C:\img\yuhun");
+        Assert.Equal(new Size(1200, 600), set.Images.Single(i => i.Name == "start").BaseSize);
+        Assert.Null(set.Images.Single(i => i.Name == "old").BaseSize);   // 没记的老模板 → 不缩放
+    }
+
+    [Fact]
+    public void FromJson_drops_non_positive_base_size()
+    {
+        // 手工改坏/占位的尺寸不能进运行期模型,否则会算出 0 或负的缩放比。
+        var dto = new TargetSetJson
+        {
+            Images =
+            {
+                new TargetImageJson { File = "a.png", BaseSize = new Size(0, 600) },
+                new TargetImageJson { File = "b.png", BaseSize = new Size(1200, -1) },
+            },
+        };
+
+        var set = TargetSetLoader.FromJson(dto, @"C:\img\yuhun");
+
+        Assert.All(set.Images, i => Assert.Null(i.BaseSize));
+    }
+
+    [Fact]
     public void FromJson_applies_defaults_and_per_image_matcher_override()
     {
         var dto = new TargetSetJson

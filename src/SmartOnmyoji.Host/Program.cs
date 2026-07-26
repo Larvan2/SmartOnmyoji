@@ -11,8 +11,12 @@ using SmartOnmyoji.Core.Targets;
 using SmartOnmyoji.Host.Ui;
 using SmartOnmyoji.Vision;
 using SmartOnmyoji.Windows;
-// WinForms(WebView2 外壳)引入 System.Drawing 后,Point 与 Core.Point 冲突,显式取 Core 版。
+// WinForms(WebView2 外壳)引入 System.Drawing 后,Point/Size 与 Core 同名类型冲突,显式取 Core 版。
 using Point = SmartOnmyoji.Core.Point;
+using Size = SmartOnmyoji.Core.Size;
+
+// 冒烟命令输出大量中文,而 Windows 控制台默认代码页(GBK/CP437)会把它显示成乱码。
+try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { /* 无控制台(WebView2 外壳)时忽略 */ }
 
 // 全项目任何窗口/截图操作前,先声明 DPI 感知
 DpiAwareness.EnablePerMonitorV2();
@@ -42,6 +46,9 @@ switch (command)
         return;
     case "match":
         MatchWindow(args.Length > 1 ? args[1] : null, args.Length > 2 ? args[2] : "huntu");
+        return;
+    case "scalematch":
+        ScaleMatch(args.Length > 1 ? args[1] : "test", args.Skip(2).ToArray());
         return;
     case "click":
         ClickWindow(
@@ -483,6 +490,125 @@ static long CountNonBlack(byte[] bgra)
         if (bgra[i] != 0 || bgra[i + 1] != 0 || bgra[i + 2] != 0)
             count++;
     return count;
+}
+
+/// <summary>
+/// 离线验证「模板跨分辨率复用」——不需要游戏窗口,纯文件输入,可反复回归。
+/// 目录里按 <c>X_full.jpg</c>(整帧截图)↔ <c>X.jpg</c>(从该帧裁出的模板)配对;
+/// 把整帧缩放到别的分辨率后,分别用<b>记了 baseSize</b> 与<b>没记 baseSize</b>(旧行为)的模板匹配,
+/// 对照打印分数和坐标误差,直接看出「模板在 A 分辨率截、拿到 B 分辨率跑」是否成立。
+/// </summary>
+static void ScaleMatch(string folder, string[] scaleArgs)
+{
+    var folderPath = ImgFolderPath(folder);
+    if (!Directory.Exists(folderPath)) { Console.WriteLine($"目录不存在:{folderPath}"); return; }
+
+    var scales = scaleArgs
+        .Select(a => double.TryParse(a, out var v) ? v : 0)
+        .Where(v => v > 0)
+        .ToArray();
+    if (scales.Length == 0) scales = [0.75, 0.9, 1.25, 1.5];
+
+    var pairs = Directory.EnumerateFiles(folderPath)
+        .Where(f => Path.GetFileNameWithoutExtension(f).EndsWith("_full", StringComparison.OrdinalIgnoreCase))
+        .OrderBy(f => f, StringComparer.Ordinal)
+        .Select(full =>
+        {
+            var stem = Path.GetFileNameWithoutExtension(full);
+            stem = stem[..^"_full".Length];
+            var template = Directory.EnumerateFiles(folderPath)
+                .FirstOrDefault(f => Path.GetFileNameWithoutExtension(f).Equals(stem, StringComparison.OrdinalIgnoreCase));
+            return (Full: full, Template: template);
+        })
+        .Where(p => p.Template is not null)
+        .ToList();
+
+    if (pairs.Count == 0)
+    {
+        Console.WriteLine($"{folderPath} 里没有 X_full.* ↔ X.* 配对(整帧截图 + 从中裁出的模板)。");
+        return;
+    }
+
+    using var matcher = new TemplateMatcher();
+    var scan = new MatchOptions(MatchMethod.Template, 0.0, 1.0); // 阈值 0 → 总返回分数,便于对照
+    const double hitThreshold = 0.80;
+
+    foreach (var (fullPath, templatePath) in pairs)
+    {
+        var name = Path.GetFileNameWithoutExtension(templatePath!);
+        var (bw, bh, baseGray) = LoadGrayScaled(fullPath, 1.0);
+        var baseFrame = new CaptureFrame(bw, bh, baseGray);
+        var baseSize = new Size(bw, bh);
+
+        var baseline = matcher.Match(
+            baseFrame,
+            new TargetImage { Name = name, FilePath = templatePath!, BaseSize = baseSize },
+            scan);
+
+        Console.WriteLine($"\n=== {Path.GetFileName(templatePath)} @ 基准帧 {Path.GetFileName(fullPath)} {bw}x{bh} ===");
+        if (baseline is null) { Console.WriteLine("  基准帧就没匹配上,素材有问题。"); continue; }
+        Console.WriteLine($"  基准 ×1.00     分数 {baseline.Score:0.000}  @({baseline.Center.X},{baseline.Center.Y})");
+
+        foreach (var s in scales)
+        {
+            var (fw, fh, gray) = LoadGrayScaled(fullPath, s);
+            var frame = new CaptureFrame(fw, fh, gray);
+
+            var withBase = matcher.Match(
+                frame, new TargetImage { Name = name, FilePath = templatePath!, BaseSize = baseSize }, scan);
+            var legacy = matcher.Match(
+                frame, new TargetImage { Name = name, FilePath = templatePath! }, scan);  // 没记 baseSize = 旧行为
+
+            double expectX = baseline.Center.X * s, expectY = baseline.Center.Y * s;
+            Console.WriteLine($"  ×{s:0.00}  帧 {fw}x{fh}   期望中心 ≈({expectX:0},{expectY:0})");
+            Console.WriteLine($"    记了 baseSize   {Describe(withBase, expectX, expectY, hitThreshold)}");
+            Console.WriteLine($"    旧行为(不缩放)  {Describe(legacy, expectX, expectY, hitThreshold)}");
+        }
+    }
+
+    Console.WriteLine("\n→ 「记了 baseSize」这行命中、且坐标误差在几个像素内,即说明同一套模板可跨分辨率复用。");
+
+    static string Describe(MatchResult? r, double expectX, double expectY, double hitThreshold)
+    {
+        if (r is null) return "模板大于截图,跳过";
+        var dx = r.Center.X - expectX;
+        var dy = r.Center.Y - expectY;
+        var mark = r.Score >= hitThreshold ? "✔ 命中" : "✘ 未达阈值";
+        return $"分数 {r.Score:0.000}  @({r.Center.X},{r.Center.Y})  误差({dx:+0;-0;0},{dy:+0;-0;0})px  {mark}";
+    }
+}
+
+/// <summary>
+/// 读 PNG/JPG 并(可选)等比缩放为灰度帧,模拟"同一画面在另一分辨率下的截图"。
+/// 诊断专用,用 System.Drawing 就地做掉,不把这类图像 IO 塞进 Vision 层。
+/// </summary>
+static (int Width, int Height, byte[] Gray) LoadGrayScaled(string path, double scale)
+{
+    using var src = new Bitmap(path);
+    var w = Math.Max(1, (int)Math.Round(src.Width * scale, MidpointRounding.AwayFromZero));
+    var h = Math.Max(1, (int)Math.Round(src.Height * scale, MidpointRounding.AwayFromZero));
+
+    using var dst = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+    using (var g = Graphics.FromImage(dst))
+    {
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+        g.DrawImage(src, 0, 0, w, h);
+    }
+
+    var data = dst.LockBits(
+        new Rectangle(0, 0, w, h),
+        System.Drawing.Imaging.ImageLockMode.ReadOnly,
+        System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+    var bgra = new byte[w * h * 4];
+    try
+    {
+        for (var y = 0; y < h; y++)   // 按行拷贝:Stride 未必等于 w*4
+            System.Runtime.InteropServices.Marshal.Copy(data.Scan0 + y * data.Stride, bgra, y * w * 4, w * 4);
+    }
+    finally { dst.UnlockBits(data); }
+
+    return (w, h, GrayFromBgra(w, h, bgra));
 }
 
 static byte[] GrayFromBgra(int width, int height, byte[] bgra)

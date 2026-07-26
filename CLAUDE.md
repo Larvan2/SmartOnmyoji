@@ -53,6 +53,7 @@ dotnet run --project src/SmartOnmyoji.Host -- demo            # 假引擎跑 3 �
 dotnet run --project src/SmartOnmyoji.Host -- list            # 枚举可见窗口(句柄/pid/客户区尺寸/标题)
 dotnet run --project src/SmartOnmyoji.Host -- capture "阴阳师"  # 后台截客户区并存 PNG
 dotnet run --project src/SmartOnmyoji.Host -- match "阴阳师" yuling   # 自裁剪回配 + 对 img/yuling 逐图匹配 + 计时
+dotnet run --project src/SmartOnmyoji.Host -- scalematch test        # 离线验证模板跨分辨率复用(不需要游戏窗口)
 dotnet run --project src/SmartOnmyoji.Host -- click "阴阳师" yuling win_shengli  # 匹配后拟人化后台点击,并算前后画面差异
 ```
 
@@ -92,7 +93,8 @@ Vision (net9.0)            Windows (net9.0-windows)
 ### 贯穿全局的几个关键约定(不理解会踩坑)
 
 - **统一客户区坐标系(物理像素)**:截图捕获客户区、匹配在客户区图上出点、点击用客户区坐标 `SendMessage`——三者同一坐标系。**因此彻底删掉了旧版 `cy = py + pos[1] - 40` 这类标题栏硬编码偏移。** 见设计文档附录 B。
-- **零缩放**:旧版那套 DPI/压缩/`real_pos`+`scal_rate` 三层缩放换算**全部省掉并已实测验证**。做法:① 启动即 `DpiAwareness.EnablePerMonitorV2()` 按物理像素捕获;② 默认不压缩(全分辨率 ~14ms/张够快);③ 点击坐标用**客户区归一化坐标(0~1)**(`ClickSpec` / `NormalizedPoint`),乘当前客户区尺寸即像素,天生分辨率无关。改这一块前务必先读设计文档 §2.2 / §9.2,别把缩放逻辑加回来。
+- **零缩放**:旧版那套 DPI/压缩/`real_pos`+`scal_rate` 三层**坐标**缩放换算**全部省掉并已实测验证**。做法:① 启动即 `DpiAwareness.EnablePerMonitorV2()` 按物理像素捕获;② 默认不压缩(全分辨率 ~14ms/张够快);③ 点击坐标用**客户区归一化坐标(0~1)**(`ClickSpec` / `NormalizedPoint`),乘当前客户区尺寸即像素,天生分辨率无关。改这一块前务必先读设计文档 §2.2 / §9.2,别把坐标缩放逻辑加回来。
+- **唯一保留的缩放:模板的分辨率适配**(§9.4,与上一条不冲突——缩的是**模板图像**,不是坐标)。`target.json` 每图记 `baseSize`(截该模板时的客户区尺寸),运行时客户区尺寸不同就把模板按比例缩放再 `matchTemplate`,**同一套模板跨分辨率复用,不必换分辨率重截图**。裁决在 `Core/Matching/TemplateScale.cs`(纯函数,拿不准一律退回 1.0 不缩放),重采样+缓存在 `TemplateMatcher`。这也是**不移植旧版 SIFT 特征匹配**的原因(理由与实测见 §9.4)。
 - **事件驱动、引擎不知道 UI 存在**:引擎经 `Channel<EngineEvent>` 发结构化事件(`RoundStarted`/`TargetMatched`/`Clicked`/`Waiting`/`EngineStopped`/`LogMessage`…),取代旧版 `print("<br>")` 兼作日志+UI 的死耦合。
 - **`RoundStateMachine` 收拢旧 flag 逻辑**:旧 `img_pos.json` 的 flag `""`/`start`/`mark`/`skip`/`stop` → 枚举 `Normal`/`RoundStart`/`Once`/`Skip`/`Stop`,加「连续 N 次同名即终止」的卡死保护,集中一处裁决、逐分支单测。
 - **协作式取消**:`CancellationToken` 取代旧 `QThread.terminate()`。
@@ -113,4 +115,5 @@ Vision (net9.0)            Windows (net9.0-windows)
   - **切片二**:①**目标管理写侧(§9.3)**——建集 / 软件内截图 canvas 框选取模板 / 逐图设 flag·删图 / 截图上点选归一化偏移点、`target.json` 由软件托管写回;优先级不再手填,改为**按图片列表顺序自动设置 + 拖动排序**(手柄触发的 HTML5 drag-and-drop);另有「打开文件夹」按钮(`POST /api/targets/{name}/open-folder`)在资源管理器打开该目标集的磁盘目录。写侧全在 `TargetSetCatalog`(裸名校验 + 拦路径穿越)。②**运行匹配缩略图**——`TargetMatched` 带可空 `GrayThumbnail`,`EngineManager` 编码 PNG 塞 `matched` 事件,前端日志内联。
   - 已 headless+curl 实测两切片全链路(建集/存图/edit 对账/PUT 持久化/删图/缩略图/校验/SSE),**72 单测仍全绿**。**WebView2 外壳已真机启动、功能大致正常(用户 2026-07-22 确认)**——§3 主推路线端到端跑通。
 - **下一步**:P7 按真机使用反馈打磨 → P8 打包(单文件+Trimming、评估 NativeAOT、`app.manifest` 提权)。
-- 已知待办:多开时 `Enumerate` 顺序不稳定(拟改为可显式指定句柄);OpenCvSharp 的 NativeAOT 打包兼容性尚未验证;诱饵点击/时段警告(`DecoyClick`/`PlaytimeWarning`)留作可选后续补;需偏移点击的图后续在 `target.json` 手动补客户区归一化坐标。
+- **模板跨分辨率复用已完成(2026-07-26)**:见上「唯一保留的缩放」与设计文档 §9.4;`scalematch` 冒烟命令可离线回归。旧目标集(没记 `baseSize`)行为不变,**重新截一次模板即获得跨分辨率能力**。
+- 已知待办:多开时 `Enumerate` 顺序不稳定(拟改为可显式指定句柄);OpenCvSharp 的 NativeAOT 打包兼容性尚未验证;诱饵点击/时段警告(`DecoyClick`/`PlaytimeWarning`)留作可选后续补;需偏移点击的图后续在 `target.json` 手动补客户区归一化坐标;**每图 `Hint=Feature` 目前静默失效**——注入的 `TemplateMatcher` 不看 `options.Method`,要用特征匹配需先补按 `Method` 分发的 `CompositeMatcher`。

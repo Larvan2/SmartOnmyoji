@@ -848,13 +848,18 @@ async function saveCrop() {
   c.getContext('2d').drawImage(img, mg.sel.x, mg.sel.y, mg.sel.w, mg.sel.h, 0, 0, mg.sel.w, mg.sel.h);
   const dataUrl = c.toDataURL('image/png');
 
+  // 连同截图的原始尺寸(= 客户区物理像素)一起存,模板才能在别的分辨率下按比例缩放复用。
   const r = await api(`/api/targets/${encodeURIComponent(mg.name)}/images`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ file: fname, dataUrl }),
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ file: fname, dataUrl, baseWidth: mg.natW, baseHeight: mg.natH }),
   });
   toast('已保存模板 ' + r.file, 'ok');
   $('newImgName').value = '';
   if (!mg.model.images.some((i) => i.file === r.file))
-    mg.model.images.push({ file: r.file, priority: mg.model.images.length + 1, flag: 'Normal' });
+    mg.model.images.push({
+      file: r.file, priority: mg.model.images.length + 1, flag: 'Normal', baseSize: r.baseSize,
+    });
   renderMgImages();
   clearSelection();
   await mgLoadSets();
@@ -960,6 +965,16 @@ function renderMgImages() {
     const nameCol = document.createElement('div');
     nameCol.className = 'mg-name';
     nameCol.textContent = img.file;
+    // 基准分辨率:模板在哪个客户区尺寸下截的。运行时按当前尺寸缩放模板复用,没记的老模板不缩放。
+    const base = document.createElement('span');
+    base.className = 'mg-base';
+    base.textContent = img.baseSize
+      ? `基准 ${img.baseSize.width}×${img.baseSize.height}`
+      : '基准未记录 · 不缩放';
+    base.title = img.baseSize
+      ? '换分辨率运行时,模板会按当前客户区尺寸等比缩放后匹配'
+      : '这张模板没有记录截取时的分辨率(旧模板),只能在原分辨率下匹配;重新截取即可获得跨分辨率能力';
+    nameCol.appendChild(base);
 
     const flagSel = document.createElement('select');
     flagSel.className = 'mg-flag';

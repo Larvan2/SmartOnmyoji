@@ -44,10 +44,15 @@ public static class TargetSetLoader
             Flag = img.Flag,
             Hint = img.Matcher ?? defaults.Matcher,
             Click = ToClickSpec(img.Click),
+            BaseSize = ToBaseSize(img.BaseSize),
         });
 
         return new TargetSet(name, images);
     }
+
+    /// <summary>非正的尺寸(手写错/占位)一律当"未记录"处理,避免算出 0 或负的缩放比。</summary>
+    private static Size? ToBaseSize(Size? size) =>
+        size is { Width: > 0, Height: > 0 } ? size : null;
 
     private static ClickSpec? ToClickSpec(ClickSpecJson? click)
     {

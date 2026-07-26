@@ -7,6 +7,8 @@ using SmartOnmyoji.Core.Abstractions;
 using SmartOnmyoji.Core.Engine;
 using SmartOnmyoji.Core.Targets;
 using SmartOnmyoji.Windows;
+// Host 是 WinForms 项目,全局 using 了 System.Drawing —— 显式指名用领域里的 Size(客户区像素尺寸)。
+using Size = SmartOnmyoji.Core.Size;
 
 namespace SmartOnmyoji.Host.Ui;
 
@@ -91,12 +93,20 @@ public static class ApiEndpoints
         });
 
         // 前端 canvas 裁好的模板(dataURL)落盘为目标集里的图片文件。
+        // 同时记下截图时的客户区尺寸(baseWidth/baseHeight)——模板跨分辨率复用的依据,只有此刻知道。
         app.MapPost("/api/targets/{name}/images", (string name, SaveImageRequest req) =>
         {
             var bytes = DecodeDataUrl(req.DataUrl);
             if (bytes is null) return Results.BadRequest(new { ok = false, error = "图片数据非法。" });
-            var (ok, err, file) = TargetSetCatalog.SaveImage(name, req.File ?? "", bytes);
-            return ok ? Results.Ok(new { ok = true, file }) : Results.BadRequest(new { ok = false, error = err });
+
+            Size? baseSize = req.BaseWidth > 0 && req.BaseHeight > 0
+                ? new Size(req.BaseWidth, req.BaseHeight)
+                : null;
+
+            var (ok, err, file) = TargetSetCatalog.SaveImage(name, req.File ?? "", bytes, baseSize);
+            return ok
+                ? Results.Ok(new { ok = true, file, baseSize })
+                : Results.BadRequest(new { ok = false, error = err });
         });
 
         app.MapDelete("/api/targets/{name}/images/{file}", (string name, string file) =>
@@ -225,4 +235,8 @@ public sealed record SaveImageRequest
 {
     public string? File { get; init; }
     public string? DataUrl { get; init; }
+
+    /// <summary>截图时的客户区尺寸(物理像素,= 前端那张整图的原始宽高);0 表示前端没给,按未记录处理。</summary>
+    public int BaseWidth { get; init; }
+    public int BaseHeight { get; init; }
 }

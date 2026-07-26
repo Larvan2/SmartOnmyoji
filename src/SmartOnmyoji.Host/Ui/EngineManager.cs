@@ -5,6 +5,7 @@ using SmartOnmyoji.Core.Abstractions;
 using SmartOnmyoji.Core.Config;
 using SmartOnmyoji.Core.Engine;
 using SmartOnmyoji.Core.Events;
+using SmartOnmyoji.Core.Matching;
 using SmartOnmyoji.Core.Targets;
 using SmartOnmyoji.Vision;
 using SmartOnmyoji.Windows;
@@ -158,6 +159,9 @@ public sealed class EngineManager
             foreach (var w in warnings)
                 Publish(LogEnvelope("Warning", "[目标集] " + w));
 
+            foreach (var notice in ScaleNotices(set, targets))
+                Publish(LogEnvelope("Info", notice));
+
             var engine = new AutomationEngine(
                 _windows, new GdiWindowCapturer(), matcher, new SendMessageInput(), targets, set,
                 pause: pause);
@@ -187,6 +191,32 @@ public sealed class EngineManager
                 _pauseSource = null;
             }
             BroadcastState();
+        }
+    }
+
+    /// <summary>
+    /// 启动时报告模板的分辨率适配:模板按截取时的客户区尺寸缩放到当前窗口再匹配。
+    /// 让「换了分辨率也能用同一套模板」这件事在日志里看得见,匹配不上时也好判断是不是缩放的锅。
+    /// </summary>
+    private IEnumerable<string> ScaleNotices(TargetSet set, IReadOnlyList<WindowInfo> targets)
+    {
+        foreach (var w in targets)
+        {
+            ClientArea client;
+            try { client = _windows.GetClientArea(w.Handle); }
+            catch { continue; }
+
+            var scales = set.Images
+                .Select(i => TemplateScale.Resolve(i.BaseSize, client.Width, client.Height))
+                .Where(s => Math.Abs(s - 1.0) > TemplateScale.Epsilon)
+                .ToList();
+
+            if (scales.Count == 0) continue;
+
+            double min = scales.Min(), max = scales.Max();
+            var factor = max - min <= TemplateScale.Epsilon ? $"×{min:0.###}" : $"×{min:0.###}~{max:0.###}";
+            yield return $"[目标集] {client.Width}×{client.Height} 与模板截取分辨率不同,"
+                       + $"{scales.Count}/{set.Images.Count} 张模板按 {factor} 缩放后匹配。";
         }
     }
 

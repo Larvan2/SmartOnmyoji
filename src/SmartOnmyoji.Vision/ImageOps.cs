@@ -31,4 +31,16 @@ internal static class ImageOps
         Cv2.Resize(src, dst, new OpenCvSharp.Size((int)(src.Width * ratio), (int)(src.Height * ratio)), 0, 0, InterpolationFlags.Area);
         return dst;
     }
+
+    /// <summary>
+    /// 把模板重采样到指定像素尺寸(分辨率适配用)。缩小取 <c>Area</c>(不产生振铃、保边最好),
+    /// 放大取 <c>Cubic</c>(比 Area 放大锐利,匹配分数更高)。
+    /// </summary>
+    public static Mat ResizeTo(Mat src, int width, int height)
+    {
+        var dst = new Mat();
+        var interpolation = width < src.Width ? InterpolationFlags.Area : InterpolationFlags.Cubic;
+        Cv2.Resize(src, dst, new OpenCvSharp.Size(width, height), 0, 0, interpolation);
+        return dst;
+    }
 }

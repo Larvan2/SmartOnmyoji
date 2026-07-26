@@ -1,6 +1,8 @@
 using SmartOnmyoji.Core;
 using SmartOnmyoji.Core.Engine;
 using SmartOnmyoji.Core.Matching;
+// Host 是 WinForms 项目,全局 using 了 System.Drawing —— 显式指名用领域里的 Size(客户区像素尺寸)。
+using Size = SmartOnmyoji.Core.Size;
 
 namespace SmartOnmyoji.Host.Ui;
 
@@ -11,7 +13,9 @@ public sealed record WindowDto(string Handle, string Title, int ProcessId, int W
 
 public sealed record TargetSetSummaryDto(string Name, int ImageCount, string Source);
 
-public sealed record TargetImageDto(string Name, string File, int Priority, string Flag, bool HasClick);
+/// <summary><see cref="BaseSize"/> = 截取该模板时的客户区尺寸;null 表示旧模板没记,匹配时不缩放。</summary>
+public sealed record TargetImageDto(
+    string Name, string File, int Priority, string Flag, bool HasClick, Size? BaseSize);
 
 public sealed record TargetSetDetailDto(
     string Name,

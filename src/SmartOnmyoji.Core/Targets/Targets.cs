@@ -41,6 +41,13 @@ public sealed record TargetImage
     /// <summary>关键图的偏移点击;为 null 时点击匹配中心点。</summary>
     public ClickSpec? Click { get; init; }
 
+    /// <summary>
+    /// 截取此模板时的客户区尺寸(物理像素)。运行时客户区若是别的尺寸,匹配器按比例缩放模板再匹配——
+    /// <b>同一套模板可跨分辨率复用,不必换个分辨率就重截一遍图</b>。
+    /// null = 未记录(旧目标集/导入数据),此时不缩放,行为与记录前完全一致。
+    /// </summary>
+    public Size? BaseSize { get; init; }
+
     /// <summary>本图的匹配器覆盖;Auto 时用全局设置。</summary>
     public MatchHint Hint { get; init; } = MatchHint.Auto;
 }

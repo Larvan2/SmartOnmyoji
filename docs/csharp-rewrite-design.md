@@ -344,8 +344,10 @@ public async Task RunAsync(EngineOptions opts, IReadOnlyList<nint> windows,
   "name": "御魂",
   "defaults": { "matcher": "Template" },
   "images": [
-    { "file": "tiaozhan.jpg",  "priority": 10, "flag": "RoundStart" },
+    { "file": "tiaozhan.jpg",  "priority": 10, "flag": "RoundStart",
+      "baseSize": { "width": 1200, "height": 600 } },
     { "file": "win_jiangli.jpg","priority": 20, "flag": "Normal",
+      "baseSize": { "width": 1200, "height": 600 },
       "click": { "clickPos": [[0.75, 0.92], [0.71, 0.89]] } },
     { "file": "00_marked.png",  "priority": 30, "flag": "Skip" },
     { "file": "0_end.jpg",      "priority": 5,  "flag": "Stop" }
@@ -354,6 +356,9 @@ public async Task RunAsync(EngineOptions opts, IReadOnlyList<nint> windows,
 ```
 
 - 显式 `priority` 取代文件名隐式排序。
+- **`baseSize` = 截取该模板时的客户区尺寸(物理像素)**,由目标管理截图取模板时自动记录(用户不填)。
+  运行时客户区若是别的尺寸,匹配器按比例把模板缩放过去再匹配 → **同一套模板跨分辨率复用,不必换个分辨率就重截一遍图**。
+  缺省(旧目标集/导入数据)= 不缩放,行为与加入该字段前完全一致。详见 §9.4。
 - 每图可覆盖 matcher(匹配器)。**阈值不再每图/默认覆盖,统一走运行级 `EngineOptions.Match.Threshold`(运行页「匹配阈值」)**——旧的每图/默认阈值无 UI、只会架空运行页设置,已删除。
 - **`clickPos` 用客户区归一化坐标(0~1)**,乘当前客户区尺寸即得像素——天生分辨率无关,
   彻底删掉旧版 `real_pos` + `scal_rate` + `abs(pos-real_pos)<100` 的缩放换算(已在 P2 验证:命中中心即客户区可点坐标)。
@@ -371,6 +376,44 @@ public async Task RunAsync(EngineOptions opts, IReadOnlyList<nint> windows,
 - `target.json` 由软件读写托管,用户不必手碰 JSON;`img_pos.json` 导入器退居为"迁移旧目标集"的一次性入口。
 
 > P6 已把底层跑通(schema + 序列化/加载 + 导入器 + 三级加载优先);P7 在其上补这层交互(前端表单/截图取模板/flag 编辑器 + 后端 `POST /api/targets`、截图/裁剪端点)。
+
+### 9.4 模板跨分辨率复用:`baseSize` + 缩放模板匹配(取代旧版 SIFT 路线)
+
+**要解决的真问题**:模板在 A 分辨率截的,换到 B 分辨率(换机器、改窗口大小)就匹配不上,用户被迫**为每个分辨率重截一套图**。
+旧版给的答案是第二条匹配路径——**SIFT 特征点匹配**(`GetPosBySiftMatch`:SIFT + FLANN + Lowe ratio 0.6 + `findHomography` 求中心),
+号称抗缩放旋转,但旧作者自己在注释里写"准确度不好说,用起来有点难受"。
+
+**新版不走 SIFT,改用「记基准尺寸 + 缩放模板」**,理由:
+
+- 游戏 UI 换分辨率时的变换是**纯相似变换**(等比缩放 + 平移),既无旋转也无透视——SIFT 那 8 自由度单应是为一个 1 自由度的问题上的重型工具。
+- UI 图标是**低纹理、边缘锐利的合成图像**,恰是 SIFT 的弱项:特征点少且不稳定。旧版 `len(good) > 9` 的绝对门槛让小图标恒不命中,大图标又易误命中(两个相似按钮)。
+- 代价差一个量级:SIFT 每轮要对整张截图做一次特征提取;缩放模板匹配仍是一次 `matchTemplate`,**且缩放结果可缓存**,稳态零额外开销。
+- 分数语义不变(仍是 `TM_CCOEFF_NORMED` 的 0~1),运行页阈值、日志、状态机全部照旧;SIFT 路径则根本给不出可比的分数。
+
+**做法**(三处,各自很薄):
+
+1. **写侧**:目标管理截图取模板时,前端把那张整帧截图的原始尺寸(= 客户区物理像素)随图一起 POST;
+   `TargetSetCatalog.SaveImage` 落图后立刻把 `baseSize` 写进 `target.json`——这个值**只有截图那一刻知道**,漏记就再也补不回来,所以不等用户点「保存 target.json」。
+2. **裁决**:`Core/Matching/TemplateScale.cs` 纯函数算缩放比(可离线单测)。等比变化取两方向均值;明显不等比(窗口被拉伸/游戏加黑边)取**较小比例**(UI 内容一般按较短边等比适配);
+   比例落在 `[0.2, 5.0]` 之外或基准尺寸缺失/非正 → **一律返回 1.0 不缩放**,拿不准时宁可退回旧行为。
+3. **匹配**:`TemplateMatcher` 把模板缩放到目标尺寸再 `matchTemplate`,按(路径 + 目标像素尺寸)缓存缩放结果;
+   与既有压缩(`CompressRatio`)复合时,**模板总缩放 = 分辨率适配比 × 压缩比,而命中坐标只按压缩比还原**——模板缩放改的是模板大小,命中位置始终落在截图坐标系里。
+
+**实测**(`scalematch` 离线命令,素材 `img/test/`:1200×600 整帧 + 从中裁的 82×38 / 168×102 模板):
+
+| 目标分辨率 | 记了 `baseSize` | 旧行为(不缩放) |
+|---|---|---|
+| ×0.75(900×450) | 0.964 / 0.986,误差 ≤1px | 0.281 / 0.562,坐标偏 110~151px |
+| ×0.90(1080×540) | 0.914 / 0.992,误差 ≤1px | 0.399 / 0.691 |
+| ×1.25(1500×750) | 0.961 / 0.995,误差 ≤1px | 0.326 / 0.598,坐标偏 407~667px |
+| ×1.50(1800×900) | 0.980 / 0.996,误差 ≤1px | 0.318 / 0.654 |
+
+记了 `baseSize` 的全部超过 0.80 阈值且坐标误差 ≤1px;旧行为全部低于阈值、坐标乱飞。**同一套模板跨分辨率复用成立。**
+
+> 特征点匹配路径**没有删掉口子**:`MatchMethod.Feature` / `MatchHint.Feature` 枚举位仍在,
+> 将来若出现缩放解决不了的场景(例如真需要旋转不变)可再补 `Vision/FeatureMatcher.cs`。
+> 但那时需先补一个按 `options.Method` 分发的 `CompositeMatcher`——**现在注入的 `TemplateMatcher` 并不看 `options.Method`,
+> 每图 `Hint=Feature` 目前是静默失效的**(已知待办)。
 
 ---
 
@@ -531,6 +574,14 @@ Host (Kestrel, localhost)
   - **落点**:`Host/Ui/EngineManager.OnEngineEvent` 收到 `EngineStopped` 时,若 `Reason != Cancelled`(即到达回合/时长上限的 `Completed`、命中终止图的 `StopFlag`、卡死保护的 `RepeatedSameTarget`)才通知;用户手动点「停止」不弹——那种情况本来就在看着界面。
   - **`Host/Ui/CompletionNotifier`**:独立 STA 后台线程起临时 `NotifyIcon` 显气泡通知(6s)+ `SystemSounds.Asterisk` 提示音,不依赖 `ui`(WebView2 消息循环)或 `serve`(无消息循环)哪种宿主模式在跑——两边都能弹,失败静默不影响引擎主流程。放 Host 层(不进 Core):Core 引擎不知道 UI/系统通知存在,`EngineManager` 仍是唯一把事件接到宿主能力的地方,对齐 §10。
   - 全解决方案编译 0 警告 0 错误,75 单测全绿(不涉及 Core,无新增单测)。
+- **模板跨分辨率复用(2026-07-26)——`baseSize` + 缩放模板匹配**(用户确认:痛点就是"模板在 A 分辨率截的想在 B 分辨率跑,不用多次截同样的图"):
+  - **背景**:先分析了旧版第二条匹配路径 SIFT 特征匹配(`GetPosBySiftMatch`),结论是**不移植**——UI 图标低纹理正是 SIFT 弱项、8 自由度单应对 1 自由度问题过剩、每轮整帧特征提取贵一个量级、且给不出与模板匹配可比的分数。改用**记基准尺寸 + 缩放模板**直击痛点。完整取舍与实测见 §9.4。
+  - **Core**:`TargetImage.BaseSize` / `TargetImageJson.baseSize`(`{width,height}`)+ `TargetSetLoader` 映射(非正尺寸当未记录);新增 `Core/Matching/TemplateScale.cs` 纯函数裁决缩放比(等比取均值、不等比取较小、比例离谱或缺失一律退回 1.0 不缩放)。
+  - **Vision**:`TemplateMatcher` 按缩放比重采样模板再匹配,按(路径+目标像素尺寸)缓存缩放结果;与压缩复合时**模板总缩放 = 适配比 × 压缩比,命中坐标只按压缩比还原**。`ImageOps.ResizeTo`(缩小 Area / 放大 Cubic)。
+  - **Host/WebUI**:存模板时前端带整帧尺寸 → `SaveImage` 立即把 `baseSize` 写进 `target.json`(此值只有截图那刻知道,不等用户点保存);图片列表每行显示「基准 1200×600」/「基准未记录 · 不缩放」;引擎启动时若当前客户区与模板基准不同,日志报一条 `按 ×0.83 缩放后匹配`。
+  - **新增 `scalematch` 离线冒烟命令**:目录内按 `X_full.jpg`(整帧)↔ `X.jpg`(从中裁的模板)配对,把整帧缩放到各比例后,**对照**打印"记了 baseSize" vs "旧行为"的分数与坐标误差。不需要游戏窗口,纯文件输入,可反复回归。
+  - **实测**(素材 `img/test/`):×0.75/×0.90/×1.25/×1.50 四档下,记了 `baseSize` 的分数 **0.914~0.996 全部命中、坐标误差 ≤1px**;旧行为 0.281~0.691 **全部低于 0.80 阈值**、坐标偏离最多 667px。写侧经 headless `serve` + REST 实证:存图落 `baseSize` → `/edit` 往返 → `PUT` 整份配置后仍在 → DTO 透出。**全解决方案 98 单测全绿**(新增 `TemplateScaleTests` 14 项 + schema 往返 2 项)。
+  - **顺带修**:冒烟命令的中文输出在 Windows 控制台默认代码页下一直是乱码,`Program.cs` 启动时显式设 `Console.OutputEncoding = UTF8`(无控制台时静默忽略)。
 
 ---
 
