@@ -48,7 +48,7 @@ switch (command)
         MatchWindow(args.Length > 1 ? args[1] : null, args.Length > 2 ? args[2] : "huntu");
         return;
     case "scalematch":
-        ScaleMatch(args.Length > 1 ? args[1] : "test", args.Skip(2).ToArray());
+        ScaleMatch(args.Length > 1 ? args[1] : "scalematch", args.Skip(2).ToArray());
         return;
     case "click":
         ClickWindow(
@@ -500,7 +500,7 @@ static long CountNonBlack(byte[] bgra)
 /// </summary>
 static void ScaleMatch(string folder, string[] scaleArgs)
 {
-    var folderPath = ImgFolderPath(folder);
+    var folderPath = ScaleMatchFolder(folder);
     if (!Directory.Exists(folderPath)) { Console.WriteLine($"目录不存在:{folderPath}"); return; }
 
     var scales = scaleArgs
@@ -633,6 +633,18 @@ static byte[] CropBgra(byte[] src, int srcWidth, int x, int y, int cropWidth, in
 
 static string ArtifactPath(string fileName) =>
     Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".artifacts", fileName));
+
+/// <summary>
+/// `scalematch` 的素材目录:优先取仓库内 <c>tests/assets/&lt;目录&gt;</c>——**这份素材随仓库走**,
+/// 换台机器 clone 下来就能跑回归(根目录 <c>img/</c> 是 gitignore 的用户数据,靠不住)。
+/// 找不到再退回 <c>img/&lt;目录&gt;</c>,方便临时拿真实目标集试。
+/// </summary>
+static string ScaleMatchFolder(string folder)
+{
+    var assets = Path.GetFullPath(
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tests", "assets", folder));
+    return Directory.Exists(assets) ? assets : ImgFolderPath(folder);
+}
 
 static string ImgFolderPath(string folder) =>
     Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "img", folder));

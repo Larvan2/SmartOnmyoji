@@ -53,12 +53,13 @@ dotnet run --project src/SmartOnmyoji.Host -- demo            # 假引擎跑 3 �
 dotnet run --project src/SmartOnmyoji.Host -- list            # 枚举可见窗口(句柄/pid/客户区尺寸/标题)
 dotnet run --project src/SmartOnmyoji.Host -- capture "阴阳师"  # 后台截客户区并存 PNG
 dotnet run --project src/SmartOnmyoji.Host -- match "阴阳师" yuling   # 自裁剪回配 + 对 img/yuling 逐图匹配 + 计时
-dotnet run --project src/SmartOnmyoji.Host -- scalematch test        # 离线验证模板跨分辨率复用(不需要游戏窗口)
+dotnet run --project src/SmartOnmyoji.Host -- scalematch             # 离线验证模板跨分辨率复用(不需要游戏窗口)
 dotnet run --project src/SmartOnmyoji.Host -- click "阴阳师" yuling win_shengli  # 匹配后拟人化后台点击,并算前后画面差异
 ```
 
 - 标题参数是**子串包含**匹配;省略则取当前前台窗口。
 - **图片测试用 `img/yuling/` 目录**;其中 `start`、`win_shengli` 已知在旧版可用,适合做验证基准。
+- **`scalematch` 的素材在 `tests/assets/scalematch/`(随仓库走,clone 下来就能跑)**:按 `X_full.jpg`(整帧截图)↔ `X.jpg`(从该帧裁出的模板)配对。给了目录名参数时先找 `tests/assets/<名>`,找不到才退回 `img/<名>`。
 - ⚠️ `click` 会真的操作游戏、`P4` 起的循环会**反复点击**——涉及真机操作游戏的动作,执行前先跟用户确认。
 
 ### 旧版 Python(已归档到 `python-legacy/`,仅参照,一般不动)

@@ -399,7 +399,7 @@ public async Task RunAsync(EngineOptions opts, IReadOnlyList<nint> windows,
 3. **匹配**:`TemplateMatcher` 把模板缩放到目标尺寸再 `matchTemplate`,按(路径 + 目标像素尺寸)缓存缩放结果;
    与既有压缩(`CompressRatio`)复合时,**模板总缩放 = 分辨率适配比 × 压缩比,而命中坐标只按压缩比还原**——模板缩放改的是模板大小,命中位置始终落在截图坐标系里。
 
-**实测**(`scalematch` 离线命令,素材 `img/test/`:1200×600 整帧 + 从中裁的 82×38 / 168×102 模板):
+**实测**(`scalematch` 离线命令,素材 `tests/assets/scalematch/`——**随仓库走,clone 下来即可复现**:1200×600 整帧 + 从中裁的 82×38 / 168×102 模板):
 
 | 目标分辨率 | 记了 `baseSize` | 旧行为(不缩放) |
 |---|---|---|
@@ -579,8 +579,8 @@ Host (Kestrel, localhost)
   - **Core**:`TargetImage.BaseSize` / `TargetImageJson.baseSize`(`{width,height}`)+ `TargetSetLoader` 映射(非正尺寸当未记录);新增 `Core/Matching/TemplateScale.cs` 纯函数裁决缩放比(等比取均值、不等比取较小、比例离谱或缺失一律退回 1.0 不缩放)。
   - **Vision**:`TemplateMatcher` 按缩放比重采样模板再匹配,按(路径+目标像素尺寸)缓存缩放结果;与压缩复合时**模板总缩放 = 适配比 × 压缩比,命中坐标只按压缩比还原**。`ImageOps.ResizeTo`(缩小 Area / 放大 Cubic)。
   - **Host/WebUI**:存模板时前端带整帧尺寸 → `SaveImage` 立即把 `baseSize` 写进 `target.json`(此值只有截图那刻知道,不等用户点保存);图片列表每行显示「基准 1200×600」/「基准未记录 · 不缩放」;引擎启动时若当前客户区与模板基准不同,日志报一条 `按 ×0.83 缩放后匹配`。
-  - **新增 `scalematch` 离线冒烟命令**:目录内按 `X_full.jpg`(整帧)↔ `X.jpg`(从中裁的模板)配对,把整帧缩放到各比例后,**对照**打印"记了 baseSize" vs "旧行为"的分数与坐标误差。不需要游戏窗口,纯文件输入,可反复回归。
-  - **实测**(素材 `img/test/`):×0.75/×0.90/×1.25/×1.50 四档下,记了 `baseSize` 的分数 **0.914~0.996 全部命中、坐标误差 ≤1px**;旧行为 0.281~0.691 **全部低于 0.80 阈值**、坐标偏离最多 667px。写侧经 headless `serve` + REST 实证:存图落 `baseSize` → `/edit` 往返 → `PUT` 整份配置后仍在 → DTO 透出。**全解决方案 98 单测全绿**(新增 `TemplateScaleTests` 14 项 + schema 往返 2 项)。
+  - **新增 `scalematch` 离线冒烟命令**:目录内按 `X_full.jpg`(整帧)↔ `X.jpg`(从中裁的模板)配对,把整帧缩放到各比例后,**对照**打印"记了 baseSize" vs "旧行为"的分数与坐标误差。不需要游戏窗口,纯文件输入,可反复回归。素材放 **`tests/assets/scalematch/`(随仓库走)**——根 `img/` 是 gitignore 的用户数据,回归素材不能放那儿;命令按 `tests/assets/<名>` → `img/<名>` 顺序找目录。
+  - **实测**(素材 `tests/assets/scalematch/`):×0.75/×0.90/×1.25/×1.50 四档下,记了 `baseSize` 的分数 **0.914~0.996 全部命中、坐标误差 ≤1px**;旧行为 0.281~0.691 **全部低于 0.80 阈值**、坐标偏离最多 667px。写侧经 headless `serve` + REST 实证:存图落 `baseSize` → `/edit` 往返 → `PUT` 整份配置后仍在 → DTO 透出。**全解决方案 98 单测全绿**(新增 `TemplateScaleTests` 14 项 + schema 往返 2 项)。
   - **顺带修**:冒烟命令的中文输出在 Windows 控制台默认代码页下一直是乱码,`Program.cs` 启动时显式设 `Console.OutputEncoding = UTF8`(无控制台时静默忽略)。
 
 ---
