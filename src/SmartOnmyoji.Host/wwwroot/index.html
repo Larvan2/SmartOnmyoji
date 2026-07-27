@@ -203,14 +203,9 @@
       <div class="card">
         <h2>截图取模板</h2>
         <div class="row">
-          <input id="mgWindowFilter" class="win-filter" placeholder="筛选标题…" value="阴阳师" />
-          <button id="mgWinRefresh" class="ghost" title="刷新窗口">↻</button>
+          <button id="openCapture" class="primary block" disabled>打开截图编辑器</button>
         </div>
-        <div class="row">
-          <select id="mgWindowSelect"></select>
-          <button id="mgCapture" class="ghost">截图</button>
-        </div>
-        <p class="hint">截图后会打开大尺寸编辑器,在其中框选生成模板;也可在右侧图片行点「偏移点」进入点选模式。</p>
+        <p class="hint">选窗口 → 截图 → 框选,全在编辑器里完成;也可在右侧图片行点「偏移点」进入点选模式。</p>
       </div>
     </section>
 
@@ -242,10 +237,16 @@
         <h2 id="captureModalTitle">框选模板</h2>
         <div class="capture-modal-tools">
           <button id="modeCrop" class="chip active">框选模板</button>
-          <span id="selInfo" class="meta"></span>
-          <button id="mgRecapture" class="ghost">↻ 重新截图</button>
+          <span id="selInfo" class="meta inline"></span>
           <button id="captureModalClose" class="ghost">✕ 关闭</button>
         </div>
+      </div>
+      <!-- 选窗就在编辑器里:选窗 → 截图 → 框选是一条动线,不用来回切左侧面板;截图按钮同时兼「重新截图」。 -->
+      <div class="capture-bar">
+        <input id="mgWindowFilter" class="win-filter" placeholder="筛选标题…" value="阴阳师" />
+        <select id="mgWindowSelect" class="cap-win"></select>
+        <button id="mgWinRefresh" class="ghost" title="刷新窗口列表">↻</button>
+        <button id="mgCapture" class="primary">截图</button>
       </div>
       <div class="capture-modal-body">
         <div id="captureStage" class="capture-stage empty">

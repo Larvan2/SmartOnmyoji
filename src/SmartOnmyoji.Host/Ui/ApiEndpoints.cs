@@ -94,6 +94,7 @@ public static class ApiEndpoints
 
         // 前端 canvas 裁好的模板(dataURL)落盘为目标集里的图片文件。
         // 同时记下截图时的客户区尺寸(baseWidth/baseHeight)——模板跨分辨率复用的依据,只有此刻知道。
+        // 重名不静默覆盖:回 409 + 冲突文件名,前端问过用户后带 overwrite=true 重发。
         app.MapPost("/api/targets/{name}/images", (string name, SaveImageRequest req) =>
         {
             var bytes = DecodeDataUrl(req.DataUrl);
@@ -103,9 +104,11 @@ public static class ApiEndpoints
                 ? new Size(req.BaseWidth, req.BaseHeight)
                 : null;
 
-            var (ok, err, file) = TargetSetCatalog.SaveImage(name, req.File ?? "", bytes, baseSize);
-            return ok
-                ? Results.Ok(new { ok = true, file, baseSize })
+            var (ok, err, file, conflict) =
+                TargetSetCatalog.SaveImage(name, req.File ?? "", bytes, baseSize, req.Overwrite);
+            if (ok) return Results.Ok(new { ok = true, file, baseSize });
+            return conflict is not null
+                ? Results.Json(new { ok = false, conflict, error = $"模板「{conflict}」已存在。" }, statusCode: 409)
                 : Results.BadRequest(new { ok = false, error = err });
         });
 
@@ -239,4 +242,7 @@ public sealed record SaveImageRequest
     /// <summary>截图时的客户区尺寸(物理像素,= 前端那张整图的原始宽高);0 表示前端没给,按未记录处理。</summary>
     public int BaseWidth { get; init; }
     public int BaseHeight { get; init; }
+
+    /// <summary>用户已确认覆盖同名模板(第一次请求撞名回 409,前端问过用户后才置 true)。</summary>
+    public bool Overwrite { get; init; }
 }

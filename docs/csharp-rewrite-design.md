@@ -582,6 +582,11 @@ Host (Kestrel, localhost)
   - **新增 `scalematch` 离线冒烟命令**:目录内按 `X_full.jpg`(整帧)↔ `X.jpg`(从中裁的模板)配对,把整帧缩放到各比例后,**对照**打印"记了 baseSize" vs "旧行为"的分数与坐标误差。不需要游戏窗口,纯文件输入,可反复回归。素材放 **`tests/assets/scalematch/`(随仓库走)**——根 `img/` 是 gitignore 的用户数据,回归素材不能放那儿;命令按 `tests/assets/<名>` → `img/<名>` 顺序找目录。
   - **实测**(素材 `tests/assets/scalematch/`):×0.75/×0.90/×1.25/×1.50 四档下,记了 `baseSize` 的分数 **0.914~0.996 全部命中、坐标误差 ≤1px**;旧行为 0.281~0.691 **全部低于 0.80 阈值**、坐标偏离最多 667px。写侧经 headless `serve` + REST 实证:存图落 `baseSize` → `/edit` 往返 → `PUT` 整份配置后仍在 → DTO 透出。**全解决方案 98 单测全绿**(新增 `TemplateScaleTests` 14 项 + schema 往返 2 项)。
   - **顺带修**:冒烟命令的中文输出在 Windows 控制台默认代码页下一直是乱码,`Program.cs` 启动时显式设 `Console.OutputEncoding = UTF8`(无控制台时静默忽略)。
+- **P7 打磨(2026-07-27)——截图取模板:选窗口移进编辑器 + 存图重名问是否覆盖**(用户反馈):
+  - **选窗口进弹窗**:窗口筛选/下拉/刷新原本留在左侧 400px 卡片,而截图、框选、保存都在弹窗里,换个窗口或发现截错窗口就得关弹窗回左侧——动线被割成两处。现把这排控件搬进弹窗的 `.capture-bar`(筛选 + 窗口下拉 + ↻ + 「截图」),**「截图」按钮同时兼原 `#mgRecapture` 的重新截图**(同一个 `mgCapture()`,弹窗保持打开、`captureImg` 原地刷新),故删掉 `#mgRecapture`。左侧卡片只剩一个「打开截图编辑器」按钮,**未选目标集时禁用**(模板无处可存,不该让人截完了才发现存不了)。附带:每次开弹窗重枚举一次窗口(句柄会随开关变),Esc 关弹窗;右侧点「偏移点」时不再因"本次还没截图"而拒开弹窗——现在弹窗里就能截。
+  - **存图重名不再静默覆盖**:`TargetSetCatalog.SaveImage` 加 `overwrite` 参数,撞名时**不落盘**、返回冲突文件名,端点回 **409 + `{conflict}`**;前端 `postCropImage` 识别 409 → `confirm("模板「x」已存在,覆盖它?")` → 确认才带 `overwrite:true` 重发,取消则原样保留。**「同名」按去扩展名比较**——模板的逻辑名就是不含扩展名的文件名(`TargetImage.Name`),放任 `win.jpg`/`win.png` 并存等于同一目标被匹配两次;故确认覆盖时同名的其它扩展名旧文件一并删除,并从 `target.json` 摘掉条目(`RecordBaseSize` 扩成 `SyncJson`,一次写盘同时做"记 baseSize"和"摘旧条目")。
+  - **顺带修两处会说谎的 UI**:① 同名覆盖后模板 URL 不变,浏览器拿缓存,列表和运行页缩略图仍显示旧图 → 图片 URL 统一走 `imgUrl()` 带 `?v=<imgVer>`,存图后 bump;② 重截同一张模板时前端内存模型没更新 `baseSize`,用户随后点「保存 target.json」会把新基准尺寸盖回旧值 → 存图成功后同步刷新该条目的 `baseSize`。
+  - **实测**:headless `serve` + REST 全链路(首存 200 → 同名 409 → `overwrite` 200 且 `baseSize` 更新 → 存 `a.jpg` 撞 `a.png` 回 409 → 覆盖后磁盘只剩 `a.jpg`、`target.json` 条目同步替换 → `?v=` 不影响取图);HTML/JS 的 id 引用交叉核对无悬空。样式经 `tools/tailwindcss.exe` 重新生成并提交 `wwwroot/tailwind.css`;不涉及 Core,**98 单测全绿**。
 
 ---
 

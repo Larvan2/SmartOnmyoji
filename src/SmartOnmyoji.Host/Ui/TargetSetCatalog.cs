@@ -218,38 +218,70 @@ public static class TargetSetCatalog
     /// 把一张截图裁剪(PNG/JPG 字节)存为该目标集的模板文件。返回落盘后的裸文件名。
     /// <paramref name="baseSize"/> 是截图时的客户区尺寸,会一并记进 target.json,
     /// 供匹配器把模板缩放到其它分辨率复用(见 <c>TemplateScale</c>)。
+    /// <para>
+    /// 重名<b>不静默覆盖</b>:已有同名模板时返回 <c>Conflict</c>=冲突的文件名、不落盘,
+    /// 由 UI 弹「是否覆盖」,用户确认后带 <paramref name="overwrite"/>=true 重来——
+    /// 截图取模板极易手滑撞名,悄悄盖掉一张已调好的模板事后无从发现。
+    /// </para>
+    /// <para>
+    /// 「同名」按<b>去扩展名</b>比较:模板的逻辑名就是不含扩展名的文件名(见 <c>TargetImage.Name</c>),
+    /// 放任 <c>win.jpg</c> / <c>win.png</c> 并存等于同一个目标被匹配两次。
+    /// 确认覆盖时,同名的其它扩展名旧文件一并删除并从 target.json 摘掉。
+    /// </para>
     /// </summary>
-    public static (bool Ok, string? Error, string? File) SaveImage(
-        string name, string fileName, byte[] bytes, Size? baseSize = null)
+    public static (bool Ok, string? Error, string? File, string? Conflict) SaveImage(
+        string name, string fileName, byte[] bytes, Size? baseSize = null, bool overwrite = false)
     {
         var folder = FolderPath(name);
         if (!Directory.Exists(folder))
-            return (false, $"目标集「{name}」不存在。", null);
+            return (false, $"目标集「{name}」不存在。", null, null);
 
         var safe = Path.GetFileName(fileName);
         if (string.IsNullOrWhiteSpace(safe) || safe != fileName)
-            return (false, "非法文件名。", null);
+            return (false, "非法文件名。", null, null);
 
         var ext = Path.GetExtension(safe).ToLowerInvariant();
         if (ext is not (".png" or ".jpg" or ".jpeg"))
-            return (false, "仅支持 .png / .jpg。", null);
+            return (false, "仅支持 .png / .jpg。", null, null);
         if (bytes.Length == 0)
-            return (false, "空图片数据。", null);
+            return (false, "空图片数据。", null, null);
+
+        var clashes = SameNameFiles(folder, safe);
+        if (clashes.Count > 0 && !overwrite)
+            return (false, null, null, Path.GetFileName(clashes[0]));
+
+        // 同名但扩展名不同的旧文件:覆盖 = 换掉这个模板,留着它只会两张图匹配同一个目标。
+        var removed = clashes
+            .Select(Path.GetFileName)
+            .Where(f => !string.Equals(f, safe, StringComparison.OrdinalIgnoreCase))
+            .ToList()!;
+        foreach (var old in removed)
+            File.Delete(Path.Combine(folder, old!));
 
         File.WriteAllBytes(Path.Combine(folder, safe), bytes);
-        RecordBaseSize(folder, safe, baseSize);
-        return (true, null, safe);
+        SyncJson(folder, safe, baseSize, removed!);
+        return (true, null, safe, null);
+    }
+
+    /// <summary>目录里与 <paramref name="fileName"/> 去扩展名同名的已有图片(含它自己),按文件名排序。</summary>
+    private static List<string> SameNameFiles(string folder, string fileName)
+    {
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        return ImageFiles(folder)
+            .Where(p => string.Equals(Path.GetFileNameWithoutExtension(p), stem, StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
 
     /// <summary>
-    /// 把「截图时的客户区尺寸」记进 target.json 对应条目。这个值<b>只有截图这一刻知道</b>,
-    /// 漏记就再也补不回来,所以存图即落盘,不等用户点「保存 target.json」。
+    /// 存图后同步 target.json:①把「截图时的客户区尺寸」记进对应条目;②摘掉覆盖时删掉的同名旧文件条目。
+    /// baseSize 这个值<b>只有截图这一刻知道</b>,漏记就再也补不回来,所以存图即落盘,不等用户点「保存 target.json」。
     /// 目录还没有 target.json(旧目标集 / 纯目录扫描来源)时不在此新建——免得悄悄改变来源判定、
     /// 把 img_pos.json 的 flag 语义甩掉;那种情况由前端 PUT 整份 json 时带上 baseSize。
     /// </summary>
-    private static void RecordBaseSize(string folder, string file, Size? baseSize)
+    private static void SyncJson(string folder, string file, Size? baseSize, IReadOnlyList<string> removed)
     {
-        if (baseSize is not { Width: > 0, Height: > 0 }) return;
+        var hasBase = baseSize is { Width: > 0, Height: > 0 };
+        if (!hasBase && removed.Count == 0) return;
         if (!TargetSetLoader.Exists(folder)) return;
 
         var path = Path.Combine(folder, TargetSetLoader.FileName);
@@ -257,19 +289,26 @@ public static class TargetSetCatalog
         try { dto = TargetSetSerializer.Deserialize(File.ReadAllText(path)); }
         catch { return; }  // 手工改坏的 json 不在"存图"这条路上纠正,留给编辑页报错
 
-        var entry = dto.Images.FirstOrDefault(i => string.Equals(i.File, file, StringComparison.OrdinalIgnoreCase));
-        if (entry is null)
+        if (removed.Count > 0)
+            dto.Images.RemoveAll(i => removed.Contains(i.File, StringComparer.OrdinalIgnoreCase));
+
+        if (hasBase)
         {
-            entry = new TargetImageJson
+            var entry = dto.Images.FirstOrDefault(i => string.Equals(i.File, file, StringComparison.OrdinalIgnoreCase));
+            if (entry is null)
             {
-                File = file,
-                Flag = TargetFlag.Normal,
-                Priority = dto.Images.Count == 0 ? 10 : dto.Images.Max(i => i.Priority) + 10,
-            };
-            dto.Images.Add(entry);
+                entry = new TargetImageJson
+                {
+                    File = file,
+                    Flag = TargetFlag.Normal,
+                    Priority = dto.Images.Count == 0 ? 10 : dto.Images.Max(i => i.Priority) + 10,
+                };
+                dto.Images.Add(entry);
+            }
+
+            entry.BaseSize = baseSize;
         }
 
-        entry.BaseSize = baseSize;
         File.WriteAllText(path, TargetSetSerializer.Serialize(dto));
     }
 

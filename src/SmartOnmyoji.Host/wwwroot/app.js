@@ -17,6 +17,11 @@ function toast(msg, kind) {
   setTimeout(() => t.classList.add('hidden'), 3200);
 }
 
+// 模板图 URL 带缓存版本号:覆盖同名模板后 URL 不变,浏览器会拿旧图;存/删图后 bump 这个数强制重取。
+let imgVer = 0;
+const imgUrl = (set, file) =>
+  `/api/targets/${encodeURIComponent(set)}/images/${encodeURIComponent(file)}?v=${imgVer}`;
+
 // ---------- 目标集 ----------
 async function loadTargets() {
   const sets = await api('/api/targets');
@@ -52,7 +57,7 @@ async function onTargetChange() {
     cell.title = `${img.file}\nflag=${img.flag} 优先级=${img.priority}${img.hasClick ? ' 偏移点击' : ''}`;
     const im = document.createElement('img');
     im.loading = 'lazy';
-    im.src = `/api/targets/${encodeURIComponent(name)}/images/${encodeURIComponent(img.file)}`;
+    im.src = imgUrl(name, img.file);
     const cap = document.createElement('span');
     cap.textContent = img.flag === 'Normal' ? img.name : `${img.name} · ${flagLabel(img.flag)}`;
     cell.appendChild(im);
@@ -365,7 +370,8 @@ let analyzeOpen = false;
 let analyzeRaf = 0;
 
 // 目标名 → 稳定颜色(散点图与柱状图共用,互为图例);超出调色板则循环
-const PALETTE = ['#7c3aed', '#0ea5e9', '#16a34a', '#d97706', '#dc2626', '#db2777', '#0891b2', '#65a30d'];
+// 首色对齐主题强调色(macOS 蓝);原来紧跟其后的天蓝已换成紫,免得两个蓝在图例里分不开
+const PALETTE = ['#007aff', '#16a34a', '#d97706', '#dc2626', '#db2777', '#8b5cf6', '#0891b2', '#65a30d'];
 const colorCache = new Map();
 function colorFor(name) {
   if (!colorCache.has(name)) colorCache.set(name, PALETTE[colorCache.size % PALETTE.length]);
@@ -426,7 +432,7 @@ function themeColors() {
     text: g('--text', '#1f2430'),
     muted: g('--muted', '#6b7280'),
     border: g('--border', '#e2e5ea'),
-    accent: g('--accent', '#7c3aed'),
+    accent: g('--accent', '#007aff'),
   };
 }
 
@@ -673,6 +679,7 @@ function bindManage() {
   $('mgRefresh').addEventListener('click', () => mgLoadSets().catch((e) => toast(e.message, 'error')));
   $('mgTargetSelect').addEventListener('change', () => mgSelectSet().catch((e) => toast(e.message, 'error')));
   $('mgOpenFolder').addEventListener('click', () => mgOpenFolder().catch((e) => toast(e.message, 'error')));
+  $('openCapture').addEventListener('click', () => { setCropMode(); openCaptureModal(); });
   $('mgWinRefresh').addEventListener('click', () => mgLoadWindows().catch((e) => toast(e.message, 'error')));
   $('mgWindowFilter').addEventListener('input', renderMgWindows);
   $('mgCapture').addEventListener('click', () => mgCapture().catch((e) => toast(e.message, 'error')));
@@ -686,12 +693,19 @@ function bindManage() {
   window.addEventListener('mouseup', onStageUp);
   stage.addEventListener('click', onStageClick);
 
-  $('mgRecapture').addEventListener('click', () => mgCapture().catch((e) => toast(e.message, 'error')));
   $('captureModalClose').addEventListener('click', closeCaptureModal);
   $('captureModal').addEventListener('click', (e) => { if (e.target === $('captureModal')) closeCaptureModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('captureModal').classList.contains('hidden')) closeCaptureModal();
+  });
 }
 
-function openCaptureModal() { $('captureModal').classList.remove('hidden'); }
+function openCaptureModal() {
+  $('captureModal').classList.remove('hidden');
+  // 窗口开开关关、句柄会变,每次打开都重枚举一遍(保留已选项),免得对着过期列表截图报「窗口不存在」。
+  mgLoadWindows().catch(() => { /* 列表刷新失败不挡开窗,用户可点 ↻ 重试 */ });
+}
+
 function closeCaptureModal() { $('captureModal').classList.add('hidden'); }
 
 async function mgLoadSets() {
@@ -735,6 +749,8 @@ async function mgSelectSet() {
   mg.name = name || null;
   setCropMode();
   $('mgOpenFolder').disabled = !name;
+  // 没选目标集时模板无处可存,索性别让人先截了图再发现存不了。
+  $('openCapture').disabled = !name;
   if (!name) { mg.model = null; $('saveTargetJson').disabled = true; renderMgImages(); return; }
   mg.model = await api(`/api/targets/${encodeURIComponent(name)}/edit`);
   $('saveTargetJson').disabled = false;
@@ -783,7 +799,6 @@ async function mgCapture() {
   };
   img.src = mg.capUrl;
   clearSelection();
-  openCaptureModal();
 }
 
 // ---- 框选模板 ----
@@ -849,21 +864,47 @@ async function saveCrop() {
   const dataUrl = c.toDataURL('image/png');
 
   // 连同截图的原始尺寸(= 客户区物理像素)一起存,模板才能在别的分辨率下按比例缩放复用。
-  const r = await api(`/api/targets/${encodeURIComponent(mg.name)}/images`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ file: fname, dataUrl, baseWidth: mg.natW, baseHeight: mg.natH }),
-  });
+  const payload = { file: fname, dataUrl, baseWidth: mg.natW, baseHeight: mg.natH };
+  let r = await postCropImage(payload);
+
+  // 重名不静默覆盖:后端回冲突文件名,问过用户才带 overwrite 重发。
+  // 冲突按去扩展名比较,故 win.jpg 已存在时存 win.png 也会问——两者并存等于同一目标匹配两次。
+  const conflict = r.conflict;
+  if (conflict) {
+    if (!confirm(`模板「${conflict}」已存在,覆盖它?`)) { toast('已取消保存', 'info'); return; }
+    r = await postCropImage({ ...payload, overwrite: true });
+    if (r.conflict) { toast('覆盖失败,请重试', 'error'); return; }
+  }
+
   toast('已保存模板 ' + r.file, 'ok');
   $('newImgName').value = '';
-  if (!mg.model.images.some((i) => i.file === r.file))
-    mg.model.images.push({
-      file: r.file, priority: mg.model.images.length + 1, flag: 'Normal', baseSize: r.baseSize,
-    });
+  imgVer++;   // 同名覆盖时 URL 不变,不换版本号列表里还是旧缩略图
+
+  // 覆盖掉的若是同名不同扩展名的旧文件(win.jpg → win.png),后端已删,本地模型同步剔除。
+  if (conflict && conflict.toLowerCase() !== r.file.toLowerCase())
+    mg.model.images = mg.model.images.filter((i) => i.file.toLowerCase() !== conflict.toLowerCase());
+
+  const existing = mg.model.images.find((i) => i.file === r.file);
+  if (existing) existing.baseSize = r.baseSize ?? existing.baseSize;   // 重截可能换了分辨率
+  else mg.model.images.push({
+    file: r.file, priority: mg.model.images.length + 1, flag: 'Normal', baseSize: r.baseSize,
+  });
+
   renderMgImages();
   clearSelection();
   await mgLoadSets();
   await loadTargets();
+}
+
+// 存模板:409 = 重名冲突(后端不静默覆盖),把冲突文件名回给调用方去问用户。
+async function postCropImage(payload) {
+  const res = await fetch(`/api/targets/${encodeURIComponent(mg.name)}/images`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => null);
+  if (res.status === 409) return { conflict: data?.conflict || payload.file };
+  if (!res.ok) throw new Error(data?.error || res.statusText);
+  return data;
 }
 
 // ---- 偏移点击点选 ----
@@ -875,12 +916,10 @@ function enterPointMode(idx) {
   clearSelection();
   renderPoints();
   renderMgImages();
-  if (!mg.natW) {
-    toast('请先在左侧「截图取模板」选窗口并点「截图」,再点「偏移点」进入点选', 'info');
-    return;
-  }
   openCaptureModal();
-  toast('点选模式:在截图上单击添加偏移点击点', 'info');
+  toast(mg.natW
+    ? '点选模式:在截图上单击添加偏移点击点'
+    : '点选模式:先在上方选窗口点「截图」,再在截图上单击', 'info');
 }
 
 function setCropMode() {
@@ -960,7 +999,7 @@ function renderMgImages() {
     const thumb = document.createElement('img');
     thumb.className = 'mg-thumb';
     thumb.loading = 'lazy';
-    thumb.src = `/api/targets/${encodeURIComponent(mg.name)}/images/${encodeURIComponent(img.file)}`;
+    thumb.src = imgUrl(mg.name, img.file);
 
     const nameCol = document.createElement('div');
     nameCol.className = 'mg-name';
