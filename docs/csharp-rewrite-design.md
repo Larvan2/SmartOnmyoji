@@ -587,6 +587,11 @@ Host (Kestrel, localhost)
   - **存图重名不再静默覆盖**:`TargetSetCatalog.SaveImage` 加 `overwrite` 参数,撞名时**不落盘**、返回冲突文件名,端点回 **409 + `{conflict}`**;前端 `postCropImage` 识别 409 → `confirm("模板「x」已存在,覆盖它?")` → 确认才带 `overwrite:true` 重发,取消则原样保留。**「同名」按去扩展名比较**——模板的逻辑名就是不含扩展名的文件名(`TargetImage.Name`),放任 `win.jpg`/`win.png` 并存等于同一目标被匹配两次;故确认覆盖时同名的其它扩展名旧文件一并删除,并从 `target.json` 摘掉条目(`RecordBaseSize` 扩成 `SyncJson`,一次写盘同时做"记 baseSize"和"摘旧条目")。
   - **顺带修两处会说谎的 UI**:① 同名覆盖后模板 URL 不变,浏览器拿缓存,列表和运行页缩略图仍显示旧图 → 图片 URL 统一走 `imgUrl()` 带 `?v=<imgVer>`,存图后 bump;② 重截同一张模板时前端内存模型没更新 `baseSize`,用户随后点「保存 target.json」会把新基准尺寸盖回旧值 → 存图成功后同步刷新该条目的 `baseSize`。
   - **实测**:headless `serve` + REST 全链路(首存 200 → 同名 409 → `overwrite` 200 且 `baseSize` 更新 → 存 `a.jpg` 撞 `a.png` 回 409 → 覆盖后磁盘只剩 `a.jpg`、`target.json` 条目同步替换 → `?v=` 不影响取图);HTML/JS 的 id 引用交叉核对无悬空。样式经 `tools/tailwindcss.exe` 重新生成并提交 `wwwroot/tailwind.css`;不涉及 Core,**98 单测全绿**。
+- **多开逐窗口独立状态机(2026-08-23)——补齐 P4 就留下的已知取舍**(用户确认:回合计数、连续同名卡死保护要按窗口分开算,不要多个窗口共用一台状态机;见本节 P4 处「已知取舍」与 P7 处「仍未做」两条,至此补齐):
+  - **范围**:只有 `RoundStateMachine`(回合计数 + 连续同名终止)按窗口独立;防检测等待(概率随机等待/频次上限)仍按组整体施加,继续"要歇一起歇",不破坏双开组队时序。做成 `EngineOptions.PerWindowRounds` 开关,**默认开启**,关闭退回旧版全体共用一份状态机。
+  - **`AutomationEngine.RunAsync`**:单个共享 `state` 改成 `Dictionary<nint, RoundStateMachine>`(按 `PerWindowRounds` 决定每窗口独立 new 还是全体共享一份)+ `Dictionary<nint, StopReason> retired` 记录已退场窗口。单个窗口撞见停止图标/卡死保护时,`PerWindowRounds=true` 下**只让该窗口退场**(写一条 `LogMessage`,不再截图/点击,其它窗口不受影响),而不是终止整个引擎;`ByRounds` 模式下**等全部窗口都退场(达标或撞停止)才整体结束**。最终 `EngineStopped` 原因取"有异常退场就报异常原因,否则报 Completed"。`PerWindowRounds=false` 时数学上与旧版单实例逐字节等价(已用「全部窗口共享同一引用」代入验证),对现有单测零风险。
+  - `RoundStateMachine.cs` 本身未改(它一直就是按实例隔离的,只是过去只 new 了一份);`Events/EngineEvent.cs` 的 `RoundStarted` 加 `WindowTitle` 供多窗口场景区分是谁开的局。`EngineManager` 展示的单一"回合"数改取多窗口里的最大值(单调不回跳,`PerWindowRounds=false` 时退化成和现状相同)。WebUI 运行参数区加「多窗口独立计回合」复选框(默认勾选)。
+  - **新增 3 个 `AutomationEngineTests`**:两窗口各自独立计数到达标(证明互不干扰、不会有窗口"蹭"到另一窗口的计数)、一个窗口卡死退场不影响另一窗口跑完、`PerWindowRounds=false` 时退回旧版共享计数。**全解决方案 101 单测全绿**。
 
 ---
 

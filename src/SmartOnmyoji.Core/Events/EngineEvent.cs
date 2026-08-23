@@ -10,7 +10,14 @@ public abstract record EngineEvent
     public DateTimeOffset At { get; init; } = DateTimeOffset.Now;
 }
 
-public sealed record RoundStarted(int Round) : EngineEvent;
+/// <summary>
+/// <see cref="WindowTitle"/> 标识本次开局属于哪个窗口(多窗口独立计回合时,<see cref="Round"/> 是该窗口自己的计数);
+/// 空字符串表示未知/单窗口场景。
+/// </summary>
+public sealed record RoundStarted(int Round) : EngineEvent
+{
+    public string WindowTitle { get; init; } = "";
+}
 
 /// <summary>命中位置附近的灰度缩略图(客户区裁剪)。Core 只持中立灰度表示,由 Host 编码成图给 UI。</summary>
 public sealed record GrayThumbnail(int Width, int Height, byte[] Gray)

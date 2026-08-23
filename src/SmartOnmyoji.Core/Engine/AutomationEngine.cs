@@ -58,10 +58,10 @@ public sealed class AutomationEngine : IAutomationEngine
     public async Task RunAsync(EngineOptions options, CancellationToken cancellationToken)
     {
         var writer = _channel.Writer;
-        // 多开时用一台状态机集中裁决(对齐设计文档 §7);逐窗口独立状态列为后续细化。
-        var state = new RoundStateMachine(
-            options.AntiDetection.EnableRepeatStop,
-            options.AntiDetection.RepeatSameTargetStop);
+        // 多开时默认每窗口一份状态机独立计回合(P?);PerWindowRounds=false 时退回旧版全体共用一份。
+        var states = BuildWindowStates(options);
+        // 已退场窗口(达标或撞停止条件)→ 退场原因;PerWindowRounds=false 时永远为空(Stop 直接终止整个引擎)。
+        var retired = new Dictionary<nint, StopReason>();
 
         // 组级防检测策略:整个运行共享一份状态(计数/频次窗口/上次等待),等待在轮末统一施加。
         var antiDetection = _antiDetectionOverride
@@ -91,7 +91,7 @@ public sealed class AutomationEngine : IAutomationEngine
                     await writer.WriteAsync(new EnginePaused(false), cancellationToken);
                 }
 
-                if (Finished(options, state, deadline))
+                if (Finished(options, states, retired, deadline))
                     break;
 
                 // 一轮:逐窗口处理,聚合"本轮是否有任一窗口开局"(多窗口的 RoundStart 合并为组的一次)。
@@ -100,12 +100,34 @@ public sealed class AutomationEngine : IAutomationEngine
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
+                    if (retired.ContainsKey(window.Handle))
+                        continue; // 已退场:不再截图/点击,空转等其它窗口
+
+                    var state = states[window.Handle];
                     var outcome = await ProcessWindowAsync(window, options, state, writer, cancellationToken);
+
                     if (outcome.Stop is { } reason)
                     {
-                        await writer.WriteAsync(new EngineStopped(reason), CancellationToken.None);
-                        return;
+                        if (options.PerWindowRounds)
+                        {
+                            retired[window.Handle] = reason;
+                            await writer.WriteAsync(new LogMessage(EngineLogLevel.Warning,
+                                $"窗口「{window.Title}」已退场:{DescribeStop(reason)}"), cancellationToken);
+                        }
+                        else
+                        {
+                            await writer.WriteAsync(new EngineStopped(reason), CancellationToken.None);
+                            return;
+                        }
                     }
+                    else if (options.PerWindowRounds && options.Mode == RunMode.ByRounds
+                             && state.Round >= options.Rounds)
+                    {
+                        retired[window.Handle] = StopReason.Completed;
+                        await writer.WriteAsync(new LogMessage(EngineLogLevel.Info,
+                            $"窗口「{window.Title}」已完成:达到 {state.Round} 回合"), cancellationToken);
+                    }
+
                     roundStarted |= outcome.RoundStarted;
                 }
 
@@ -120,10 +142,14 @@ public sealed class AutomationEngine : IAutomationEngine
                 }
 
                 await DelayIntervalAsync(options.Interval, cancellationToken);
-                await writer.WriteAsync(new ProgressChanged(ComputeProgress(options, state, deadline)), cancellationToken);
+                await writer.WriteAsync(new ProgressChanged(ComputeProgress(options, states, deadline)), cancellationToken);
             }
 
-            await writer.WriteAsync(new EngineStopped(StopReason.Completed), CancellationToken.None);
+            // 全部窗口正常达标/退场结束时上报的原因:只要有窗口是被停止图标/卡死保护带下场的,
+            // 就用那个原因上报整个运行(比默默报 Completed 更能提醒"运行中有窗口异常过");
+            // 单窗口场景下 retired 只有一条记录,行为与旧版完全一致。
+            var finalReason = retired.Values.FirstOrDefault(r => r != StopReason.Completed, StopReason.Completed);
+            await writer.WriteAsync(new EngineStopped(finalReason), CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
@@ -187,7 +213,7 @@ public sealed class AutomationEngine : IAutomationEngine
 
         var roundStarted = decision.RoundStarted is not null;
         if (decision.RoundStarted is { } round)
-            await writer.WriteAsync(new RoundStarted(round), ct);
+            await writer.WriteAsync(new RoundStarted(round) { WindowTitle = window.Title }, ct);
 
         if (decision.Kind == DecisionKind.Stop)
             return new WindowOutcome(decision.Reason ?? StopReason.Completed, roundStarted);
@@ -278,18 +304,56 @@ public sealed class AutomationEngine : IAutomationEngine
             await Task.Delay(TimeSpan.FromSeconds(seconds), ct);
     }
 
-    private static bool Finished(EngineOptions options, RoundStateMachine state, DateTimeOffset deadline) =>
-        options.Mode switch
-        {
-            RunMode.ByRounds => state.Round >= options.Rounds,
-            RunMode.ByMinutes => DateTimeOffset.Now >= deadline,
-            _ => false,
-        };
+    /// <summary>
+    /// 按窗口分配回合状态机:<see cref="EngineOptions.PerWindowRounds"/> 开启时每窗口独立一份,
+    /// 关闭时全体窗口共用同一份实例(退回旧行为)。
+    /// </summary>
+    private Dictionary<nint, RoundStateMachine> BuildWindowStates(EngineOptions options)
+    {
+        var shared = options.PerWindowRounds
+            ? null
+            : new RoundStateMachine(options.AntiDetection.EnableRepeatStop, options.AntiDetection.RepeatSameTargetStop);
 
-    private static int ComputeProgress(EngineOptions options, RoundStateMachine state, DateTimeOffset deadline)
+        var states = new Dictionary<nint, RoundStateMachine>();
+        foreach (var window in _targets)
+            states[window.Handle] = shared
+                ?? new RoundStateMachine(options.AntiDetection.EnableRepeatStop, options.AntiDetection.RepeatSameTargetStop);
+        return states;
+    }
+
+    private static string DescribeStop(StopReason reason) => reason switch
+    {
+        StopReason.StopFlag => "命中停止图标",
+        StopReason.RepeatedSameTarget => "连续同图卡死保护",
+        _ => reason.ToString(),
+    };
+
+    /// <summary>全部窗口都"已退场或达标"才算完成;ByMinutes 模式在此基础上再叠加到点判断。</summary>
+    private static bool Finished(
+        EngineOptions options,
+        IReadOnlyDictionary<nint, RoundStateMachine> states,
+        IReadOnlyDictionary<nint, StopReason> retired,
+        DateTimeOffset deadline)
+    {
+        bool Done(nint handle) =>
+            retired.ContainsKey(handle) ||
+            (options.Mode == RunMode.ByRounds && states[handle].Round >= options.Rounds);
+
+        if (states.Keys.All(Done))
+            return true;
+
+        return options.Mode == RunMode.ByMinutes && DateTimeOffset.Now >= deadline;
+    }
+
+    private static int ComputeProgress(
+        EngineOptions options, IReadOnlyDictionary<nint, RoundStateMachine> states, DateTimeOffset deadline)
     {
         if (options.Mode == RunMode.ByRounds)
-            return options.Rounds <= 0 ? 100 : Math.Clamp(state.Round * 100 / options.Rounds, 0, 100);
+        {
+            if (options.Rounds <= 0) return 100;
+            var done = states.Values.Sum(s => Math.Min(s.Round, options.Rounds));
+            return Math.Clamp(done * 100 / (options.Rounds * states.Count), 0, 100);
+        }
 
         var span = options.Duration.TotalSeconds;
         if (span <= 0) return 100;

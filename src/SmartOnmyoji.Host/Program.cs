@@ -658,7 +658,7 @@ static string Sanitize(string name)
 
 static string Render(EngineEvent e) => e switch
 {
-    RoundStarted r => $"[回合] 第 {r.Round} 轮开始",
+    RoundStarted r => $"[回合] 第 {r.Round} 轮开始" + (string.IsNullOrEmpty(r.WindowTitle) ? "" : $"({r.WindowTitle})"),
     TargetMatched m => $"[匹配] {m.Name} @({m.Position.X},{m.Position.Y}) 分数 {m.Score:0.00}",
     Clicked c => $"[点击] {c.Name} -> {string.Join(", ", c.Points.Select(p => $"({p.X},{p.Y})"))}",
     ProgressChanged p => $"[进度] {p.Percent}%",

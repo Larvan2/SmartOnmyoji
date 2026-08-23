@@ -228,7 +228,8 @@ public sealed class EngineManager
         {
             switch (evt)
             {
-                case RoundStarted r: _round = r.Round; stateChanged = true; break;
+                // 多窗口独立计回合时各窗口各报各的 Round;取最大值展示"目前跑到第几局",单调不回跳。
+                case RoundStarted r: _round = Math.Max(_round, r.Round); stateChanged = true; break;
                 case ProgressChanged p: _progress = p.Percent; stateChanged = true; break;
                 case EnginePaused ep: _paused = ep.Paused; stateChanged = true; break;
                 // 用户主动点「停止」(Cancelled)不弹通知——那种情况用户本来就在看着界面。

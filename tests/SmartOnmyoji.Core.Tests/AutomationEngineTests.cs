@@ -312,4 +312,92 @@ public class AutomationEngineTests
 
     private static StopReason? LastStop(IEnumerable<EngineEvent> events) =>
         events.OfType<EngineStopped>().LastOrDefault()?.Reason;
+
+    // ---------- 多窗口独立计回合(PerWindowRounds) ----------
+
+    private static async Task<List<EngineEvent>> RunMultiAsync(
+        TargetSet set, string?[] script, WindowInfo[] windows, EngineOptions options)
+    {
+        var engine = new AutomationEngine(
+            new FakeWindowService(), new SequenceCapturer(), new ScriptedMatcher(script),
+            new RecordingInput(), windows, set,
+            sampler: null, random: new Random(12345));
+
+        var events = new List<EngineEvent>();
+        var consumer = Task.Run(async () =>
+        {
+            await foreach (var evt in engine.Events.ReadAllAsync(CancellationToken.None))
+                events.Add(evt);
+        });
+
+        await engine.RunAsync(options, CancellationToken.None);
+        await consumer;
+        return events;
+    }
+
+    [Fact]
+    public async Task PerWindowRounds_counts_independently_per_window()
+    {
+        var w1 = new WindowInfo(Handle: 1, Title: "w1", ProcessId: 1);
+        var w2 = new WindowInfo(Handle: 2, Title: "w2", ProcessId: 2);
+        var set = new TargetSet("t", new[]
+        {
+            Img("challenge", TargetFlag.RoundStart, 0),
+            Img("challenge2", TargetFlag.RoundStart, 1),
+            Img("reward", TargetFlag.Normal, 2),
+        });
+
+        // 交替顺序 = 每轮先 w1 后 w2 各截图一次。w1 两轮就达标(第 2 局)提前退场;
+        // w2 前两轮只碰到普通图,第 3、4 轮(w1 已退场、只轮到 w2)才碰到起点图达标。
+        var script = new string?[] { "challenge", "reward", "challenge2", "reward", "challenge", "challenge2" };
+        var events = await RunMultiAsync(set, script, new[] { w1, w2 }, Options(rounds: 2));
+
+        Assert.Contains(events, e => e is RoundStarted { Round: 1, WindowTitle: "w1" });
+        Assert.Contains(events, e => e is RoundStarted { Round: 2, WindowTitle: "w1" });
+        // w2 自己的回合数从 1 开始独立计,不是接着 w1 的共享计数涨到 3/4。
+        Assert.Contains(events, e => e is RoundStarted { Round: 1, WindowTitle: "w2" });
+        Assert.Contains(events, e => e is RoundStarted { Round: 2, WindowTitle: "w2" });
+        Assert.Contains(events, e => e is LogMessage { Level: EngineLogLevel.Info } m && m.Text.Contains("w1") && m.Text.Contains("已完成"));
+        Assert.Equal(StopReason.Completed, LastStop(events));
+    }
+
+    [Fact]
+    public async Task PerWindowRounds_retires_only_the_stuck_window()
+    {
+        var w1 = new WindowInfo(Handle: 1, Title: "w1", ProcessId: 1);
+        var w2 = new WindowInfo(Handle: 2, Title: "w2", ProcessId: 2);
+        var set = new TargetSet("t", new[]
+        {
+            Img("reward", TargetFlag.Normal, 0),
+            Img("c1", TargetFlag.RoundStart, 1),
+            Img("c2", TargetFlag.RoundStart, 2),
+            Img("c3", TargetFlag.RoundStart, 3),
+            Img("c4", TargetFlag.RoundStart, 4),
+        });
+
+        // w1 连续三轮都命中同一张非起点图 → 第 3 次触发"连续同名"卡死保护退场;
+        // w2 用四张不同起点图正常推进,其中第 4 局是在 w1 已退场之后才跑到的,证明 w2 没被拖下水。
+        var script = new string?[] { "reward", "c1", "reward", "c2", "reward", "c3", "c4" };
+        var events = await RunMultiAsync(set, script, new[] { w1, w2 }, Options(rounds: 4, repeatStop: 3));
+
+        Assert.Contains(events, e => e is LogMessage { Level: EngineLogLevel.Warning } m && m.Text.Contains("w1") && m.Text.Contains("卡死"));
+        Assert.Contains(events, e => e is RoundStarted { Round: 4, WindowTitle: "w2" });
+        Assert.Equal(StopReason.RepeatedSameTarget, LastStop(events));
+    }
+
+    [Fact]
+    public async Task PerWindowRounds_false_keeps_shared_counting()
+    {
+        var w1 = new WindowInfo(Handle: 1, Title: "w1", ProcessId: 1);
+        var w2 = new WindowInfo(Handle: 2, Title: "w2", ProcessId: 2);
+        var set = new TargetSet("t", new[] { Img("challenge", TargetFlag.RoundStart, 0) });
+
+        var options = Options(rounds: 1) with { PerWindowRounds = false };
+        var events = await RunMultiAsync(set, new string?[] { "challenge", "challenge" }, new[] { w1, w2 }, options);
+
+        // 共用一份状态机:w1 先触发开局,w2 紧接着匹配到同一张图(sameAsLast)不再单独计回合。
+        Assert.Contains(events, e => e is RoundStarted { Round: 1, WindowTitle: "w1" });
+        Assert.DoesNotContain(events, e => e is RoundStarted { WindowTitle: "w2" });
+        Assert.Equal(StopReason.Completed, LastStop(events));
+    }
 }

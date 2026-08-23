@@ -54,6 +54,12 @@ public sealed record EngineOptions
     public RunMode Mode { get; init; } = RunMode.ByRounds;
     public TimeSpan Duration { get; init; } = TimeSpan.FromMinutes(100);
     public int Rounds { get; init; } = 100;
+
+    /// <summary>
+    /// 多窗口时是否按窗口独立计回合数 + 独立做连续同名卡死保护(默认开启)。
+    /// 关闭则退回所有窗口共用一份 <see cref="Engine.RoundStateMachine"/> 的旧行为。
+    /// </summary>
+    public bool PerWindowRounds { get; init; } = true;
     public IntervalRange Interval { get; init; } = new(2.0, 4.0);
     public MatchOptions Match { get; init; } = new(MatchMethod.Template, 0.80, 1.0);
     public ProcessPriority? SetPriority { get; init; } = ProcessPriority.High;

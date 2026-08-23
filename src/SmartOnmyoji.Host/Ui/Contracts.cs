@@ -61,6 +61,7 @@ public sealed record OptionsDto
 {
     public string Mode { get; init; } = "ByRounds";        // ByRounds | ByMinutes
     public int Rounds { get; init; } = 100;
+    public bool PerWindowRounds { get; init; } = true;
     public double DurationMinutes { get; init; } = 100;
     public double IntervalMin { get; init; } = 2.0;
     public double IntervalMax { get; init; } = 4.0;
@@ -85,6 +86,7 @@ public static class OptionsMapping
     {
         Mode = o.Mode.ToString(),
         Rounds = o.Rounds,
+        PerWindowRounds = o.PerWindowRounds,
         DurationMinutes = o.Duration.TotalMinutes,
         IntervalMin = o.Interval.MinSeconds,
         IntervalMax = o.Interval.MaxSeconds,
@@ -128,6 +130,7 @@ public static class OptionsMapping
         {
             Mode = mode,
             Rounds = d.Rounds,
+            PerWindowRounds = d.PerWindowRounds,
             Duration = TimeSpan.FromMinutes(d.DurationMinutes),
             Interval = new IntervalRange(d.IntervalMin, d.IntervalMax),
             Match = new MatchOptions(MatchMethod.Template, d.MatchThreshold, 1.0),

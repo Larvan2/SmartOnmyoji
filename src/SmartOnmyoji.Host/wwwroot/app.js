@@ -145,6 +145,7 @@ async function loadOptions() {
   const o = await api('/api/options');
   setMode(o.mode);
   $('rounds').value = o.rounds;
+  $('perWindowRounds').checked = o.perWindowRounds;
   $('durationMinutes').value = Math.round(o.durationMinutes);
   $('intervalMin').value = o.intervalMin;
   $('intervalMax').value = o.intervalMax;
@@ -200,6 +201,7 @@ function collectRequest() {
     options: {
       mode,
       rounds: parseInt($('rounds').value, 10),
+      perWindowRounds: $('perWindowRounds').checked,
       durationMinutes: num('durationMinutes'),
       intervalMin: num('intervalMin'),
       intervalMax: num('intervalMax'),
