@@ -17,5 +17,5 @@ obj/
 .artifacts/
 /release/
 
-# Tailwind standalone CLI(本地工具,勿提交;生成的 wwwroot/tailwind.css 才提交)
+# 本地工具
 tools/

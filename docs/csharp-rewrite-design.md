@@ -592,6 +592,12 @@ Host (Kestrel, localhost)
   - **`AutomationEngine.RunAsync`**:单个共享 `state` 改成 `Dictionary<nint, RoundStateMachine>`(按 `PerWindowRounds` 决定每窗口独立 new 还是全体共享一份)+ `Dictionary<nint, StopReason> retired` 记录已退场窗口。单个窗口撞见停止图标/卡死保护时,`PerWindowRounds=true` 下**只让该窗口退场**(写一条 `LogMessage`,不再截图/点击,其它窗口不受影响),而不是终止整个引擎;`ByRounds` 模式下**等全部窗口都退场(达标或撞停止)才整体结束**。最终 `EngineStopped` 原因取"有异常退场就报异常原因,否则报 Completed"。`PerWindowRounds=false` 时数学上与旧版单实例逐字节等价(已用「全部窗口共享同一引用」代入验证),对现有单测零风险。
   - `RoundStateMachine.cs` 本身未改(它一直就是按实例隔离的,只是过去只 new 了一份);`Events/EngineEvent.cs` 的 `RoundStarted` 加 `WindowTitle` 供多窗口场景区分是谁开的局。`EngineManager` 展示的单一"回合"数改取多窗口里的最大值(单调不回跳,`PerWindowRounds=false` 时退化成和现状相同)。WebUI 运行参数区加「多窗口独立计回合」复选框(默认勾选)。
   - **新增 3 个 `AutomationEngineTests`**:两窗口各自独立计数到达标(证明互不干扰、不会有窗口"蹭"到另一窗口的计数)、一个窗口卡死退场不影响另一窗口跑完、`PerWindowRounds=false` 时退回旧版共享计数。**全解决方案 101 单测全绿**。
+- **WebUI 前端重写为 Vite + React(2026-10-11)**(用户确认;取代 P7 起步时的「原生 HTML/JS + standalone Tailwind CLI」选型,上面各条里提到的 `wwwroot/app.js`、`Styles/app.tw.css`、`tools/tailwindcss.exe` 均已不存在)。
+  - **动机**:原生前端约 1100 行命令式 DOM 代码,状态与 DOM 手工同步、表单与对象手工互转、与 `Contracts.cs` 之间没有类型约束。构建已依赖 .NET SDK / OpenCvSharp / WebView2,再加一个 bun 的边际成本可忽略。
+  - **选型**:Vite 8 + React 19 + TypeScript + Tailwind v4 + shadcn/ui(Base UI),TanStack Query、Zustand、React Hook Form + Zod、`@atlaskit/pragmatic-drag-and-drop`。源码在 `src/SmartOnmyoji.WebUI/`(即 §4 规划的那个目录;放在 Host 项目目录之外,否则 MSBuild 的默认通配会把 `node_modules` 全部扫进项目);`dotnet build` 经 Host 的 `BuildWeb` target 调 bun 构建到 `SmartOnmyoji.WebUI/dist/`(gitignore),再作为 `wwwroot/` 链接进输出目录,增量跳过。
+  - **后端零改动**:REST 路由、SSE 事件格式、DTO 均未变,§10 的契约方向不变。
+  - **顺带修复**:SSE 断线重连后,后端补发的最近事件会让旧前端的日志和点击统计重复一遍;新前端按事件原文去重(`stores/replay.ts`)。
+  - **实测**:行为对齐清单(`docs/webui-react-migration.md` §7)逐条在浏览器里对 `serve` 后端操作通过;无 `dist/` 状态下 `dotnet build` 与单文件 `dotnet publish` 均正确带上前端;前端 11 单测、Core 101 单测全绿。对真实游戏(1200×600)的匹配缩略图、落点红点、点击统计展示正确,提权实跑和打包出来的 release 单文件(WebView2 外壳)均由用户确认通过。
 
 ---
 

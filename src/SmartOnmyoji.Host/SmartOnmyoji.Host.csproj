@@ -41,25 +41,42 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
   </ItemGroup>
 
-  <!-- 原生 WebUI 静态资源:拷到输出目录,ContentRoot 固定为 BaseDirectory 后由 UseStaticFiles 提供 -->
+  <!--
+    WebUI(..\SmartOnmyoji.WebUI,Vite + React):Vite 构建到它自己的 dist\,再作为 wwwroot\ 拷到输出目录,
+    ContentRoot 固定为 BaseDirectory 后由 UseStaticFiles 提供。需要 PATH 里有 bun。
+    Inputs/Outputs 做增量:前端源码没变就不重跑 Vite。只改后端时可 -p:SkipWebBuild=true 跳过(沿用上次的 dist\)。
+  -->
+  <PropertyGroup>
+    <WebUIDir>$(MSBuildThisFileDirectory)..\SmartOnmyoji.WebUI\</WebUIDir>
+  </PropertyGroup>
   <ItemGroup>
-    <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <WebSource Include="$(WebUIDir)src\**\*;$(WebUIDir)index.html;$(WebUIDir)package.json;$(WebUIDir)bun.lock;$(WebUIDir)vite.config.ts;$(WebUIDir)tsconfig*.json;$(WebUIDir)components.json" />
   </ItemGroup>
 
+  <Target Name="BuildWeb" BeforeTargets="BeforeBuild" Condition="'$(SkipWebBuild)' != 'true'"
+          Inputs="@(WebSource)" Outputs="$(WebUIDir)dist\index.html">
+    <Exec Command="bun --version" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="_BunExitCode" />
+    </Exec>
+    <Error Condition="'$(_BunExitCode)' != '0'"
+           Text="构建 WebUI 需要 bun(https://bun.sh),但 PATH 里找不到。装好后重试,或用 -p:SkipWebBuild=true 跳过前端构建。" />
+    <Message Importance="high" Text="WebUI: bun run build …" />
+    <Exec Command="bun install --frozen-lockfile" WorkingDirectory="$(WebUIDir)" />
+    <Exec Command="bun run build" WorkingDirectory="$(WebUIDir)" />
+    <!-- Vite 保留 index.html 的源文件时间戳时,输出会显得比输入旧,增量判断就永远认为过期。 -->
+    <Touch Files="$(WebUIDir)dist\index.html" />
+  </Target>
+
   <!--
-    Tailwind CSS 生成(可选):默认 dotnet build 不跑,直接用已提交的 wwwroot/tailwind.css(构建不依赖 node/工具链)。
-    改样式后重新生成(需官方 v4 standalone 的 tools/tailwindcss.exe,已 gitignore):
-      dotnet build src/SmartOnmyoji.Host -p:TailwindBuild=true
-    也可用 CLI 直接跑(见 Styles/app.tw.css 顶部注释,支持 watch 热更新)。
+    dist\ 的通配必须在 BuildWeb 之后再展开:写在顶层 ItemGroup 里会在求值阶段展开,
+    那时干净 clone 的 dist\ 还不存在,第一次构建就会漏拷前端。
   -->
-  <Target Name="BuildTailwind" BeforeTargets="BeforeBuild" Condition="'$(TailwindBuild)' == 'true'">
-    <PropertyGroup>
-      <TailwindExe Condition="'$(TailwindExe)' == ''">$(MSBuildThisFileDirectory)..\..\tools\tailwindcss.exe</TailwindExe>
-    </PropertyGroup>
-    <Error Condition="!Exists('$(TailwindExe)')"
-           Text="找不到 Tailwind CLI: $(TailwindExe)。请放置官方 v4 standalone 到 tools/,或用 -p:TailwindExe=&lt;路径&gt; 指定。" />
-    <Message Importance="high" Text="Tailwind: 生成 wwwroot/tailwind.css …" />
-    <Exec Command="&quot;$(TailwindExe)&quot; -i &quot;$(MSBuildThisFileDirectory)Styles\app.tw.css&quot; -o &quot;$(MSBuildThisFileDirectory)wwwroot\tailwind.css&quot; --minify" />
+  <Target Name="IncludeWebContent" AfterTargets="BuildWeb" BeforeTargets="AssignTargetPaths">
+    <!-- 分两步:target 内的 Include 里直接写 %(RecursiveDir) 会按别的项批处理,取到的不是本项的元数据。 -->
+    <ItemGroup>
+      <_WebDist Include="$(WebUIDir)dist\**\*" />
+      <Content Include="@(_WebDist)" Link="wwwroot\%(_WebDist.RecursiveDir)%(_WebDist.Filename)%(_WebDist.Extension)" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
   </Target>
 
   <!--

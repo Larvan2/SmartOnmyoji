@@ -30,15 +30,25 @@ dotnet test SmartOnmyoji.sln --filter "Name=Deviation_zero_returns_target"
 
 ### WebUI(P7,`args[0]` = `ui` / `serve`)
 
-Host 现在是**进程内 Kestrel(仅 127.0.0.1)+ 静态 WebUI(`wwwroot/` 原生 HTML/JS)+ REST + SSE 事件流**的组合根;命令(前端→后端)走 REST,事件(后端→前端)走浏览器原生 `EventSource`(SSE,非 SignalR,见设计文档 §10 取舍)。
+Host 现在是**进程内 Kestrel(仅 127.0.0.1)+ 静态 WebUI(`src/SmartOnmyoji.WebUI/` 下的 Vite + React 应用)+ REST + SSE 事件流**的组合根;命令(前端→后端)走 REST,事件(后端→前端)走浏览器原生 `EventSource`(SSE,非 SignalR,见设计文档 §10 取舍)。
 
 ```bash
 dotnet run --project src/SmartOnmyoji.Host -- ui          # 默认:开 WebView2 桌面窗口指向本地 Kestrel(需 WebView2 运行时)
 dotnet run --project src/SmartOnmyoji.Host -- serve 8770  # headless / 浏览器模式:只起服务,浏览器开 http://127.0.0.1:8770(不依赖 WebView2,便于验证)
 ```
 
-- **样式 = Tailwind v4(官方 standalone CLI,无 node)**:源 `Styles/app.tw.css`(`@import "tailwindcss"` + `@theme` 令牌 + `@layer components`)→ 生成**已提交**的 `wwwroot/tailwind.css`。`dotnet build` **默认不跑 CLI、直接用已提交产物**(构建不依赖工具链)。改样式后重新生成:`dotnet build src/SmartOnmyoji.Host -p:TailwindBuild=true`,或 `tools/tailwindcss.exe -i …/app.tw.css -o …/tailwind.css --minify --watch`(CLI 已 gitignore,官方 v4 standalone)。设计令牌 + 部件在 CSS,布局可在 HTML 直接写工具类。
-- **前端**:原生 HTML/JS,无 node 前端构建,随 `dotnet build` 拷 `wwwroot` 到输出。两个页签:
+- **前端技术栈**(源码在 `src/SmartOnmyoji.WebUI/`,与其他项目平级但不是 .NET 项目、不在 sln 里;包管理器 bun):Vite 8 + React 19 + TypeScript,Tailwind v4(`@tailwindcss/vite`)+ shadcn/ui(Base UI)+ lucide-react,TanStack Query(服务端数据)、Zustand(SSE / 引擎状态)、React Hook Form + Zod(运行参数表单)、`@atlaskit/pragmatic-drag-and-drop`(图片排序)。没有路由库,两个页签用 state 切换。
+- **构建**:`dotnet build` 经 Host csproj 的 `BuildWeb` target 跑 `bun install --frozen-lockfile` + `bun run build`,产物落到 `src/SmartOnmyoji.WebUI/dist/`(gitignore),再作为 `wwwroot/` 拷到输出目录;前端源码没变时自动跳过。**Host 源码目录里没有 `wwwroot/`**,它只存在于输出目录。**构建机需要 PATH 里有 bun**;只改后端可加 `-p:SkipWebBuild=true`。
+- **前端开发**(热更新):后端跑 `serve 8770`,另开终端跑 Vite,浏览器开 `http://127.0.0.1:5173`(Vite 把 `/api` 代理到 8770):
+
+  ```bash
+  bun run --cwd src/SmartOnmyoji.WebUI dev
+  # 以下在 src/SmartOnmyoji.WebUI/ 下跑
+  bun run typecheck && bun test && bun run lint
+  ```
+
+- **前端约定**:基础组件一律 `bunx --bun shadcn@latest add`,要改行为就改 `components/ui/` 下生成的源码;颜色只用 `src/index.css` 里的语义 token;与后端的契约集中在 `src/api/schemas.ts`(Zod,对齐 `Ui/Contracts.cs`),改 DTO 时两边一起改;组件不直接碰 `EventSource`,只读 `stores/engine.ts`。
+- **界面**两个页签:
   - **运行**:目标集下拉+缩略图、窗口枚举/多选/倒计时点选、运行参数表单、防检测折叠面板、启动/停止、实时日志(含**匹配缩略图**内联)+进度+回合。
   - **目标管理**(§9.3 写侧):输入玩法名建集、软件内截图 canvas **框选取模板**、逐图设 flag/优先级/删图、在截图上**点选归一化偏移点击点**,全部由软件托管写回 `target.json`(用户不碰 JSON)。
 - **写侧全在 `Ui/TargetSetCatalog`**(建集/存图/写 json/删图/edit 对账),文件名/名称一律裸名校验 + 拦路径穿越。运行匹配缩略图:`TargetMatched` 带可空 `GrayThumbnail`(Core 灰度)→ `EngineManager` 编码 PNG 塞事件。
@@ -111,9 +121,9 @@ Vision (net9.0)            Windows (net9.0-windows)
 - **P4 已完成**:真 `AutomationEngine`(Core.Engine)串起 截图→`MatchFirst`→状态机裁决→拟人化点击→间隔 循环,替换了假引擎,并以管理员对真实游戏跑通 `run` 冒烟。
 - **P5 已完成**:`AntiDetectionPolicy`(概率随机等待 + 时间窗口频次上限,按 RoundStart 计数、轮末组级施加、双开安全);策略 + 引擎接线单测全绿。
 - **P6 已完成**:类型化 `EngineOptions` + 校验(`Core/Config/EngineOptionsValidation.cs`);`target.json` schema + 序列化/加载(`Core/Targets/TargetSetJson.cs`、`TargetSetLoader.cs`);`img_pos.json`→`target.json` 纯函数导入器(`Core/Targets/ImgPosImporter.cs`,flag 映射 + 文件名排序优先级 + 缺图告警;**旧 click_pos/real_pos 坐标不导入**——经确认几乎全错、坐标系不兼容,`click` 留空 → 点匹配中心)。Host 新增 `import <目录>` 命令;`run` 目标集加载三级优先(`target.json` → 旧 `img_pos.json` 内存导入补齐 flag → 目录扫描兜底),**旧目标集导入即用**。**全解决方案 72 单测全绿**。
-- **P7 进行中**:WebUI 两切片跑通。Host 升级为**进程内 Kestrel + 静态 WebUI(原生 HTML/JS,`src/SmartOnmyoji.Host/wwwroot/`)+ REST + SSE**,WebView2 桌面窗口承载(`Ui/WebUiApp`、`MainForm`、`EngineManager`、`ApiEndpoints`、`TargetSetCatalog`、`Contracts`)。`ui`(WebView2)/`serve`(headless)命令;事件流用 **SSE 非 SignalR**(设计文档 §10/§11 取舍)。
+- **P7 进行中**:WebUI 两切片跑通。Host 升级为**进程内 Kestrel + 静态 WebUI(Vite + React,`src/SmartOnmyoji.WebUI/`;2026-10-11 由原生 HTML/JS 重写,进度见 `docs/webui-react-migration.md`)+ REST + SSE**,WebView2 桌面窗口承载(`Ui/WebUiApp`、`MainForm`、`EngineManager`、`ApiEndpoints`、`TargetSetCatalog`、`Contracts`)。`ui`(WebView2)/`serve`(headless)命令;事件流用 **SSE 非 SignalR**(设计文档 §10/§11 取舍)。
   - **切片一(运行)**:目标集/窗口/参数/防检测表单、启动停止、实时日志+进度+回合。
-  - **切片二**:①**目标管理写侧(§9.3)**——建集 / 软件内截图 canvas 框选取模板 / 逐图设 flag·删图 / 截图上点选归一化偏移点、`target.json` 由软件托管写回;优先级不再手填,改为**按图片列表顺序自动设置 + 拖动排序**(手柄触发的 HTML5 drag-and-drop);另有「打开文件夹」按钮(`POST /api/targets/{name}/open-folder`)在资源管理器打开该目标集的磁盘目录。写侧全在 `TargetSetCatalog`(裸名校验 + 拦路径穿越)。②**运行匹配缩略图**——`TargetMatched` 带可空 `GrayThumbnail`,`EngineManager` 编码 PNG 塞 `matched` 事件,前端日志内联。
+  - **切片二**:①**目标管理写侧(§9.3)**——建集 / 软件内截图 canvas 框选取模板 / 逐图设 flag·删图 / 截图上点选归一化偏移点、`target.json` 由软件托管写回;优先级不再手填,改为**按图片列表顺序自动设置 + 拖动排序**(只有手柄能发起拖动);另有「打开文件夹」按钮(`POST /api/targets/{name}/open-folder`)在资源管理器打开该目标集的磁盘目录。写侧全在 `TargetSetCatalog`(裸名校验 + 拦路径穿越)。②**运行匹配缩略图**——`TargetMatched` 带可空 `GrayThumbnail`,`EngineManager` 编码 PNG 塞 `matched` 事件,前端日志内联。
   - 已 headless+curl 实测两切片全链路(建集/存图/edit 对账/PUT 持久化/删图/缩略图/校验/SSE),**72 单测仍全绿**。**WebView2 外壳已真机启动、功能大致正常(用户 2026-07-22 确认)**——§3 主推路线端到端跑通。
 - **下一步**:P7 按真机使用反馈打磨 → P8 打包(单文件+Trimming、评估 NativeAOT、`app.manifest` 提权)。
 - **模板跨分辨率复用已完成(2026-07-26)**:见上「唯一保留的缩放」与设计文档 §9.4;`scalematch` 冒烟命令可离线回归。旧目标集(没记 `baseSize`)行为不变,**重新截一次模板即获得跨分辨率能力**。
