@@ -192,7 +192,7 @@ function RunView({ savedOptions }: { savedOptions: Options }) {
             <Alert>
               <LockIcon />
               <AlertDescription>
-                运行中已锁定:参数、目标集、窗口选择都在启动那一刻生效,改动需停止后重新启动。
+                运行中已锁定
               </AlertDescription>
             </Alert>
           )}
